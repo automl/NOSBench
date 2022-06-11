@@ -53,11 +53,38 @@ def _(expr: Number):
 
 
 g, g_square, g_cube, m_hat, v_hat, y_hat = operands = symbols(
-    "g, g_square, g_cube, m_hat, v_hat, y_hat"
+    ",".join(
+        [
+            "g",
+            "g_square",
+            "g_cube",
+            "m_hat",
+            "v_hat",
+            "y_hat",
+        ]
+    )
 )
 operands += (Integer(1), Integer(2))
-unary_functions = [lambda x: x, sympy.log]
-binary_functions = [sympy.Add, lambda x, y: x - y, sympy.Mul]
+
+unary_functions = [
+    lambda x: x,
+    lambda x: -x,
+    lambda x: sympy.log(sympy.Abs(x)),
+    lambda x: sympy.sqrt(sympy.Abs(x)),
+    sympy.sign,
+]
+binary_functions = [
+    sympy.Add,
+    lambda x, y: x - y,
+    sympy.Mul,
+    lambda x, y: x / (y + 1e-8),
+    lambda x, y: x**y,
+]
+
+modules = {
+    "log": lambda x: torch.log(torch.tensor(x)),
+    "sqrt": lambda x: torch.sqrt(torch.tensor(x)),
+}
 
 
 def sample_random_tree(depth, rng):
@@ -85,7 +112,27 @@ def sample_random_tree(depth, rng):
     return _sample_tree(), args
 
 
-def get_optimizer(formula, args, modules={"log": lambda x: torch.log(torch.tensor(x))}):
+def sample_random_tree(max_depth, rng):
+    args = set()
+    depth = rng.randint(0, max_depth)
+
+    def _sample_tree(current_depth=0):
+        if current_depth == depth:
+            s = operands[rng.randint(0, len(operands))]
+            if isinstance(s, Symbol):
+                args.add(s)
+            return s
+        s1 = _sample_tree(current_depth + 1)
+        s2 = _sample_tree(current_depth + 1)
+        u1 = unary_functions[rng.randint(0, len(unary_functions))]
+        u2 = unary_functions[rng.randint(0, len(unary_functions))]
+        op = binary_functions[rng.randint(0, len(binary_functions))]
+        return BinaryOp(op, UnaryOp(u1, s1), UnaryOp(u2, s2))
+
+    return _sample_tree(), args
+
+
+def get_optimizer(formula, args):
     class Optimizer(torch.optim.Optimizer):
         def __init__(self, params, lr=1e-3, **kwargs):
             defaults = dict(lr=lr, **kwargs)
@@ -167,9 +214,13 @@ def get_optimizer(formula, args, modules={"log": lambda x: torch.log(torch.tenso
 
 
 def test_train(optimizer_class, steps):
+    torch.manual_seed(123)
     try:
         model = torch.nn.Linear(1, 1)
         optim = optimizer_class(model.parameters(), lr=0.01, betas=(0.9, 0.999, 0.999))
+        initial_loss = torch.nn.functional.mse_loss(
+            model(torch.tensor([1.0])), torch.tensor([1.0])
+        ).item()
         for _ in range(steps):
             output = model(torch.tensor([1.0]))
             loss = torch.nn.functional.mse_loss(output, torch.tensor([1.0]))
@@ -178,8 +229,9 @@ def test_train(optimizer_class, steps):
             optim.step()
             loss = loss.item()
     except:
-        loss = np.nan
-    return loss
+        initial_loss = loss = np.nan
+    return initial_loss, loss
+
 
 import numpy as np
 
@@ -191,7 +243,7 @@ sgd = get_optimizer(g, [g])
 print(f"SGD: {test_train(sgd, 100)}")
 
 # adam test
-adam = get_optimizer(m_hat / (v_hat + 1e-8) , [m_hat, v_hat])
+adam = get_optimizer(m_hat / (v_hat + 1e-8), [m_hat, v_hat])
 print(f"Adam: {test_train(adam, 100)}")
 
 # random optimizer test
@@ -200,9 +252,9 @@ for _ in range(100):
     tree, args = sample_random_tree(5, rng)
     formula = get_formula(tree)
     optimizer_class = get_optimizer(formula, args)
-    loss = test_train(optimizer_class, 100)
+    initial_loss, loss = test_train(optimizer_class, 100)
     results.append((formula, loss))
-    print(f"Formula: {formula}, Loss: {loss}")
+    print(f"Formula: {formula}, Initial loss: {initial_loss} Final loss: {loss}")
 
 results = np.array(results)
 idx = np.nanargmin(results[:, 1])
