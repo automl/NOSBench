@@ -1,261 +1,193 @@
-from typing import Any, Union, Callable
-from dataclasses import dataclass
-from sympy import symbols, Integer, Number
-from sympy import Symbol, simplify, lambdify
-import sympy
-import sympy.core.expr as sexpr
-from functools import singledispatch
-import torch
-from sympy.parsing.sympy_parser import parse_expr
+exit()
+unary_ops = [torch.sqrt]
+binary_ops = [torch.div, torch.mul, torch.sub, torch.add]
+
+MAX_MEMORY = 10
+
+def random_setup_instruction(binary_ops, memory_size, read_only_partition):
+    op = random.choice(binary_ops)
+    in1 = random.randint(0, memory_size)
+    in2 = random.randint(0, memory_size)
+    out = random.randint(read_only_partition, memory_size)
+    instruction = Instruction(
+            op,
+            Pointer(MemoryType.SCALAR, in1),
+            Pointer(MemoryType.SCALAR, in2),
+            Pointer(MemoryType.SCALAR, out))
+    return instruction
 
 
-Expr = Union["UnaryOp", "BinaryOp", Symbol]
+def random_step_instruction(binary_ops, memory_size, read_only_partition):
+    in1 = random.randint(0, memory_size)
+    a = random.randint(0, 1)
+    if  a == 0:
+        op = random.choice(unary_ops)
+    else:
+        op = random.choice(binary_ops)
+        memory_type = random.randint(0, len(MemoryType)-1)
+        in2 = random.randint(0, memory_size)
+    out = random.randint(read_only_partition, memory_size)
+
+    if a == 1:
+        instruction = Instruction(
+                op,
+                Pointer(memory_type, in1), # SCALAR, VECTOR
+                Pointer(MemoryType.VECTOR, in2),
+                Pointer(MemoryType.VECTOR, out))
+    else:
+        instruction = Instruction(
+                op,
+                Pointer(MemoryType.VECTOR, in1), # SCALAR, VECTOR
+                None,
+                Pointer(MemoryType.VECTOR, out))
+    return instruction
 
 
-@dataclass
-class UnaryOp:
-    operator: Callable[[sexpr.Expr], sexpr.Expr]
-    expr: Expr
+def random_program(max_n_setup, max_n_step):
+    program_setup = []
+    program_step = []
+    for _ in range(random.randint(0, max_n_setup)):
+        instruction = random_setup_instruction(binary_ops, MAX_MEMORY, 1)
+        program_setup.append(instruction)
+
+    for _ in range(random.randint(0, max_n_step)):
+        instruction = random_step_instruction(binary_ops, MAX_MEMORY, 2)
+        program_step.append(instruction)
+
+    return Program(program_setup, program_step)
 
 
-@dataclass
-class BinaryOp:
-    operator: Callable[[sexpr.Expr, sexpr.Expr], sexpr.Expr]
-    left_expr: Expr
-    right_expr: Expr
 
-
-@singledispatch
-def get_formula(expr):
-    raise NotImplementedError
-
-
-@get_formula.register
-def _(expr: UnaryOp):
-    return expr.operator(get_formula(expr.expr))
-
-
-@get_formula.register
-def _(expr: BinaryOp):
-    left = get_formula(expr.left_expr)
-    right = get_formula(expr.right_expr)
-    return expr.operator(left, right)
-
-
-@get_formula.register
-def _(expr: Symbol):
-    return expr
-
-
-@get_formula.register
-def _(expr: Number):
-    return expr
-
-
-g, g_square, g_cube, m_hat, v_hat, y_hat = operands = symbols(
-    ",".join(
-        [
-            "g",
-            "g_square",
-            "g_cube",
-            "m_hat",
-            "v_hat",
-            "y_hat",
-        ]
-    )
-)
-operands += (Integer(1), Integer(2))
-
-unary_functions = [
-    lambda x: x,
-    lambda x: -x,
-    lambda x: sympy.log(sympy.Abs(x)),
-    lambda x: sympy.sqrt(sympy.Abs(x)),
-    sympy.sign,
-]
-binary_functions = [
-    sympy.Add,
-    lambda x, y: x - y,
-    sympy.Mul,
-    lambda x, y: x / (y + 1e-8),
-    lambda x, y: x**y,
-]
-
-modules = {
-    "log": lambda x: torch.log(torch.tensor(x)),
-    "sqrt": lambda x: torch.sqrt(torch.tensor(x)),
-}
-
-
-def sample_random_tree(depth, rng):
-    args = set()
-
-    def _sample_tree(current_depth=0):
-        type_idx = rng.randint(0, 3) if current_depth < depth else 0
-        if type_idx == 0:
-            symbol = operands[rng.randint(0, len(operands))]
-            if isinstance(symbol, Symbol):
-                args.add(symbol)
-            return symbol
-        elif type_idx == 1:
-            op = unary_functions[rng.randint(0, len(unary_functions))]
-            expr = _sample_tree(current_depth + 1)
-            return UnaryOp(op, expr)
-        elif type_idx == 2:
-            op = binary_functions[rng.randint(0, len(binary_functions))]
-            left_expr = _sample_tree(current_depth + 1)
-            right_expr = _sample_tree(current_depth + 1)
-            return BinaryOp(op, left_expr, right_expr)
-        else:
-            raise NotImplementedError
-
-    return _sample_tree(), args
-
-
-def sample_random_tree(max_depth, rng):
-    args = set()
-    depth = rng.randint(0, max_depth)
-
-    def _sample_tree(current_depth=0):
-        if current_depth == depth:
-            s = operands[rng.randint(0, len(operands))]
-            if isinstance(s, Symbol):
-                args.add(s)
-            return s
-        s1 = _sample_tree(current_depth + 1)
-        s2 = _sample_tree(current_depth + 1)
-        u1 = unary_functions[rng.randint(0, len(unary_functions))]
-        u2 = unary_functions[rng.randint(0, len(unary_functions))]
-        op = binary_functions[rng.randint(0, len(binary_functions))]
-        return BinaryOp(op, UnaryOp(u1, s1), UnaryOp(u2, s2))
-
-    return _sample_tree(), args
-
-
-def get_optimizer(formula, args):
-    class Optimizer(torch.optim.Optimizer):
-        def __init__(self, params, lr=1e-3, **kwargs):
-            defaults = dict(lr=lr, **kwargs)
-            self.update_func = lambdify(list(args), formula, modules=modules)
-            super(Optimizer, self).__init__(params, defaults)
-
-        @torch.no_grad()
-        def step(self):
-            for group in self.param_groups:
-                for p in group["params"]:
-                    if p.grad is not None:
-                        state = self.state[p]
-                        if len(state) == 0:
-                            state["step"] = torch.tensor(0.0)
-                            if m_hat in args:
-                                # Exponential moving average of gradient values
-                                state["exp_avg"] = torch.zeros_like(
-                                    p, memory_format=torch.preserve_format
-                                )
-                            if v_hat in args:
-                                # Exponential moving average of squared gradient values
-                                state["exp_avg_sq"] = torch.zeros_like(
-                                    p, memory_format=torch.preserve_format
-                                )
-                            if y_hat in args:
-                                # Exponential moving average of cubed gradient values
-                                state["exp_avg_cube"] = torch.zeros_like(
-                                    p, memory_format=torch.preserve_format
-                                )
-
-                        state["step"] += 1
-                        step = state["step"].item()
-
-                        # if weight_decay != 0:
-                        #     grad = grad.add(param, alpha=weight_decay)
-
-                        kwargs = {}
-                        if g in args:
-                            kwargs["g"] = p.grad
-
-                        if m_hat in args:
-                            bias_correction1 = 1 - self.defaults["betas"][0] ** step
-                            state["exp_avg"].mul_(self.defaults["betas"][0]).add_(
-                                p.grad, alpha=1 - self.defaults["betas"][0]
-                            )
-                            exp_avg_hat = state["exp_avg"] / bias_correction1
-                            kwargs["m_hat"] = exp_avg_hat
-
-                        if v_hat in args or g_square in args:
-                            grad_sq = p.grad**2
-                            if g_square in args:
-                                kwargs["g_square"] = grad_sq
-
-                        if v_hat in args:
-                            bias_correction2 = 1 - self.defaults["betas"][1] ** step
-                            state["exp_avg_sq"].mul_(self.defaults["betas"][1]).add_(
-                                grad_sq, alpha=1 - self.defaults["betas"][1]
-                            )
-                            exp_avg_sq_hat = state["exp_avg_sq"] / bias_correction2
-                            kwargs["v_hat"] = exp_avg_sq_hat
-
-                        if y_hat in args or g_cube in args:
-                            grad_cube = p.grad**3
-                            if g_cube in args:
-                                kwargs["g_cube"] = grad_cube
-
-                        if y_hat in args:
-                            bias_correction3 = 1 - self.defaults["betas"][2] ** step
-                            state["exp_avg_cube"].mul_(self.defaults["betas"][1]).add_(
-                                grad_cube, alpha=1 - self.defaults["betas"][1]
-                            )
-                            exp_avg_cube_hat = state["exp_avg_cube"] / bias_correction3
-                            kwargs["y_hat"] = exp_avg_cube_hat
-
-                        d_p = -self.update_func(**kwargs)
-                        p.add_(d_p, alpha=self.defaults["lr"])
-
-    return Optimizer
-
-
-def test_train(optimizer_class, steps):
+def evaluate(program):
     torch.manual_seed(123)
-    try:
-        model = torch.nn.Linear(1, 1)
-        optim = optimizer_class(model.parameters(), lr=0.01, betas=(0.9, 0.999, 0.999))
-        initial_loss = torch.nn.functional.mse_loss(
-            model(torch.tensor([1.0])), torch.tensor([1.0])
-        ).item()
-        for _ in range(steps):
-            output = model(torch.tensor([1.0]))
-            loss = torch.nn.functional.mse_loss(output, torch.tensor([1.0]))
-            optim.zero_grad()
-            loss.backward()
-            optim.step()
-            loss = loss.item()
-    except:
-        initial_loss = loss = np.nan
-    return initial_loss, loss
+    model = torch.nn.Linear(2, 1)
+    optimizer_class = create_optimizer(program)
+    optim = optimizer_class(model.parameters(), lr=0.01)
+    initial_loss = torch.nn.functional.mse_loss(
+        model(torch.tensor([0.25, 0.25])), torch.tensor([10.0])
+    ).item()
+    for _ in range(1000):
+        output = model(torch.tensor([0.25, -0.25]))
+        loss = torch.nn.functional.mse_loss(output, torch.tensor([10.0]))
+        optim.zero_grad()
+        loss.backward()
+        optim.step()
+        loss = loss.item()
+    return loss
 
 
-import numpy as np
+def add_setup_instruction_mutation(program):
+    program = Program(*program)
+    instruction = random_setup_instruction(binary_ops, MAX_MEMORY, 1)
+    pos = random.randint(0, len(program.setup))
+    program.setup.insert(pos, instruction)
+    return program
 
-torch.manual_seed(123)
-rng = np.random.RandomState(123)
+def remove_setup_instruction_mutation(program):
+    program = Program(*program)
+    if len(program.setup):
+        pos = random.randint(0, len(program.setup)-1)
+        program.setup.pop(pos)
+    return program
 
-# sgd test
-sgd = get_optimizer(g, [g])
-print(f"SGD: {test_train(sgd, 100)}")
+def add_step_instruction_mutation(program):
+    program = Program(*program)
+    instruction = random_step_instruction(binary_ops, MAX_MEMORY, 1)
+    pos = random.randint(0, len(program.step))
+    program.step.insert(pos, instruction)
+    return program
 
-# adam test
-adam = get_optimizer(m_hat / (v_hat + 1e-8), [m_hat, v_hat])
-print(f"Adam: {test_train(adam, 100)}")
+def remove_step_instruction_mutation(program):
+    program = Program(*program)
+    if len(program.step):
+        pos = random.randint(0, len(program.step)-1)
+        program.step.pop(pos)
+    return program
 
-# random optimizer test
-results = []
-for _ in range(100):
-    tree, args = sample_random_tree(5, rng)
-    formula = get_formula(tree)
-    optimizer_class = get_optimizer(formula, args)
-    initial_loss, loss = test_train(optimizer_class, 100)
-    results.append((formula, loss))
-    print(f"Formula: {formula}, Initial loss: {initial_loss} Final loss: {loss}")
+def change_setup_mutation(program):
+    program = Program(*program)
+    program_setup = []
+    for _ in range(random.randint(0, 10)):
+        instruction = random_setup_instruction(binary_ops, MAX_MEMORY, 2)
+        program_setup.append(instruction)
+    program = Program(program_setup, program.step)
+    return program
 
-results = np.array(results)
-idx = np.nanargmin(results[:, 1])
-print(f"Best:\n{results[idx]}")
+def change_step_mutation(program):
+    program = Program(*program)
+    program_step = []
+    for _ in range(random.randint(0, 10)):
+        instruction = random_step_instruction(binary_ops, MAX_MEMORY, 2)
+        program_step.append(instruction)
+    program = Program(program.setup, program_step)
+    return program
+
+def modify_setup_argument_mutation(program):
+    program = Program(*program)
+    instruction = random.choice(program.setup)
+    idx = random.randint(0, 2)
+    if idx == 0:
+        instruction.in1 = Pointer(instruction.in1.name, random.randint(0, MAX_MEMORY))
+    elif idx == 1:
+        instruction.in2 = Pointer(instruction.in2.name, random.randint(0, MAX_MEMORY))
+    elif idx == 2:
+        instruction.out = Pointer(instruction.out.name, random.randint(1, MAX_MEMORY))
+    return program
+
+def modify_step_argument_mutation(program):
+    program = Program(*program)
+    instruction = random.choice(program.step)
+    idx = random.randint(0, 2)
+    if idx == 0:
+        instruction.in1 = Pointer(instruction.in1.name, random.randint(0, MAX_MEMORY))
+    elif idx == 1:
+        instruction.in2 = Pointer(instruction.in2.name, random.randint(0, MAX_MEMORY))
+    elif idx == 2:
+        instruction.out = Pointer(instruction.out.name, random.randint(2, MAX_MEMORY))
+    return program
+
+
+
+mutations = [add_setup_instruction_mutation, remove_setup_instruction_mutation,
+        add_step_instruction_mutation, remove_step_instruction_mutation,
+        change_setup_mutation, change_step_mutation,
+        modify_setup_argument_mutation,
+        modify_step_argument_mutation]
+
+
+
+class RegularizedEvolution:
+    def __init__(self, population_size, t, n):
+        self.t = t
+        self.n = n
+        self.population_size = population_size
+        self.population = []
+        for _ in range(population_size):
+            self.population.append(random_program(10, 10))
+
+    def run(self, n):
+        for i in range(n):
+            for _ in range(self.n):
+                self.population.pop(0)
+            eval_idxs = [random.randint(0, self.population_size-self.n-1) for _ in range(self.t)]
+            fitness = []
+            for idx in eval_idxs:
+                program = self.population[idx]
+                fitness.append(evaluate(program))
+            eval_idxs = np.array(eval_idxs)
+            population = np.array(self.population, dtype=Program)
+            n_best = population[eval_idxs[np.argsort(fitness)[:self.n]]]
+            for best in n_best:
+                clone = copy.deepcopy(best)
+                mutate = random.choice(mutations)
+                clone = mutate(clone)
+                self.population.append(Program(*clone))
+            print(np.min(fitness))
+
+
+
+random.seed(123)
+re = RegularizedEvolution(5, 5, 1)
+print(re)
+re.run(50)
+

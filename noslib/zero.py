@@ -4,7 +4,6 @@ from collections import namedtuple, defaultdict
 from enum import IntEnum
 from functools import partial
 
-import numpy as np
 import torch
 from torch import nn
 
@@ -97,7 +96,8 @@ def create_optimizer(program, default_lr=1e-3):
 
                         state["step"] += 1
 
-                        d_p = p.grad # If instructions are empty do an SGD update
+                        # d_p = p.grad # If program is empty do an SGD update
+                        d_p = 0.0
 
                         # Execute step instructions
                         for instruction in program.step:
@@ -195,9 +195,12 @@ if __name__ == "__main__":
     model = torch.nn.Linear(1, 1)
     optimizer_class = create_optimizer(program)
     optim = optimizer_class(model.parameters(), lr=0.01)
+    # optim = torch.optim.RMSprop(model.parameters(), lr=0.01)
     initial_loss = torch.nn.functional.mse_loss(
         model(torch.tensor([1.0])), torch.tensor([1.0])
     ).item()
+    import time
+    prev_time = time.time()
     for _ in range(1000):
         output = model(torch.tensor([1.0]))
         loss = torch.nn.functional.mse_loss(output, torch.tensor([1.0]))
@@ -206,3 +209,4 @@ if __name__ == "__main__":
         optim.step()
         loss = loss.item()
     print(f"Initial Loss: {initial_loss}, Final Loss: {loss}")
+    print(f"Elapsed seconds: {time.time() - prev_time}")
