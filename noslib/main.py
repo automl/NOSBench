@@ -1,14 +1,43 @@
-exit()
+import copy
+
+from zero import Pointer, Instruction, Program, MemoryType
+from zero import create_optimizer
+from regularized_evolution import RegularizedEvolution
+
+import torch
+import numpy as np
+
+
+# TODO: Combine ops wiht namedtuple(operation, "func, type")
+# TODO: Specify which position of the memory to use as the result
+# TODO: Add scalar operations to step instructions
+# TODO: Start from a valid optimizer (SGD) and mutate it to create the
+# the population
+# TODO: Add more operations
+# TODO: Refactor
+# TODO: A way to cache the optimizers and the results
+# TODO: Recognize identical optimizers
+# TODO: Parallelization
+# TODO: Less memory (lazy initialization)
+# TODO: Better tasks CIFAR10
+# TODO: Speed up techniques
+
+# TODO: Cache
+# TODO: Recognize
+# TODO: Memory Usage
+# TODO: Used memory locations
+
+
 unary_ops = [torch.sqrt]
 binary_ops = [torch.div, torch.mul, torch.sub, torch.add]
-
 MAX_MEMORY = 10
 
-def random_setup_instruction(binary_ops, memory_size, read_only_partition):
-    op = random.choice(binary_ops)
-    in1 = random.randint(0, memory_size)
-    in2 = random.randint(0, memory_size)
-    out = random.randint(read_only_partition, memory_size)
+
+def random_setup_instruction(rng, memory_size, ro_partition):
+    op = binary_ops[rng.randint(0, len(binary_ops))]
+    in1 = rng.randint(0, memory_size)
+    in2 = rng.randint(0, memory_size)
+    out = rng.randint(ro_partition, memory_size)
     instruction = Instruction(
             op,
             Pointer(MemoryType.SCALAR, in1),
@@ -17,92 +46,94 @@ def random_setup_instruction(binary_ops, memory_size, read_only_partition):
     return instruction
 
 
-def random_step_instruction(binary_ops, memory_size, read_only_partition):
-    in1 = random.randint(0, memory_size)
-    a = random.randint(0, 1)
-    if  a == 0:
-        op = random.choice(unary_ops)
-    else:
-        op = random.choice(binary_ops)
-        memory_type = random.randint(0, len(MemoryType)-1)
-        in2 = random.randint(0, memory_size)
-    out = random.randint(read_only_partition, memory_size)
-
-    if a == 1:
-        instruction = Instruction(
-                op,
-                Pointer(memory_type, in1), # SCALAR, VECTOR
-                Pointer(MemoryType.VECTOR, in2),
-                Pointer(MemoryType.VECTOR, out))
-    else:
-        instruction = Instruction(
-                op,
-                Pointer(MemoryType.VECTOR, in1), # SCALAR, VECTOR
-                None,
-                Pointer(MemoryType.VECTOR, out))
+def random_step_instruction(rng, memory_size, ro_partition):
+    in1 = rng.randint(0, memory_size)
+    op = binary_ops[rng.randint(0, len(binary_ops))]
+    memory_type = rng.randint(0, len(MemoryType))
+    in2 = rng.randint(0, memory_size)
+    out = rng.randint(ro_partition, memory_size)
+    instruction = Instruction(
+            op,
+            Pointer(memory_type, in1), # SCALAR, VECTOR
+            Pointer(MemoryType.VECTOR, in2),
+            Pointer(MemoryType.VECTOR, out))
     return instruction
 
 
-def random_program(max_n_setup, max_n_step):
-    program_setup = []
-    program_step = []
-    for _ in range(random.randint(0, max_n_setup)):
-        instruction = random_setup_instruction(binary_ops, MAX_MEMORY, 1)
-        program_setup.append(instruction)
-
-    for _ in range(random.randint(0, max_n_step)):
-        instruction = random_step_instruction(binary_ops, MAX_MEMORY, 2)
-        program_step.append(instruction)
-
-    return Program(program_setup, program_step)
-
-
-
-def evaluate(program):
-    torch.manual_seed(123)
-    model = torch.nn.Linear(2, 1)
-    optimizer_class = create_optimizer(program)
-    optim = optimizer_class(model.parameters(), lr=0.01)
-    initial_loss = torch.nn.functional.mse_loss(
-        model(torch.tensor([0.25, 0.25])), torch.tensor([10.0])
-    ).item()
-    for _ in range(1000):
-        output = model(torch.tensor([0.25, -0.25]))
-        loss = torch.nn.functional.mse_loss(output, torch.tensor([10.0]))
-        optim.zero_grad()
-        loss.backward()
-        optim.step()
-        loss = loss.item()
-    return loss
-
-
-def add_setup_instruction_mutation(program):
-    program = Program(*program)
-    instruction = random_setup_instruction(binary_ops, MAX_MEMORY, 1)
-    pos = random.randint(0, len(program.setup))
-    program.setup.insert(pos, instruction)
+def add_instruction_mutation(program, rng):
+    program = copy.deepcopy(program)
+    if rng.randint(0, 2): # Setup
+        instruction = random_setup_instruction(rng, MAX_MEMORY, 1)
+        pos = rng.randint(0, len(program.setup) + 1)
+        program.setup.insert(pos, instruction)
+    else: # Step
+        instruction = random_step_instruction(rng, MAX_MEMORY, 1)
+        pos = rng.randint(0, len(program.step) + 1)
+        program.step.insert(pos, instruction)
     return program
 
-def remove_setup_instruction_mutation(program):
-    program = Program(*program)
-    if len(program.setup):
-        pos = random.randint(0, len(program.setup)-1)
-        program.setup.pop(pos)
+
+def remove_instruction_mutation(program, rng):
+    program = copy.deepcopy(program)
+    if rng.randint(0, 2): # Setup
+        if len(program.setup):
+            pos = rng.randint(0, len(program.setup))
+            program.setup.pop(pos)
+    else: # Step
+        if len(program.step):
+            pos = rng.randint(0, len(program.step))
+            program.step.pop(pos)
     return program
 
-def add_step_instruction_mutation(program):
-    program = Program(*program)
-    instruction = random_step_instruction(binary_ops, MAX_MEMORY, 1)
-    pos = random.randint(0, len(program.step))
-    program.step.insert(pos, instruction)
-    return program
 
-def remove_step_instruction_mutation(program):
-    program = Program(*program)
-    if len(program.step):
-        pos = random.randint(0, len(program.step)-1)
-        program.step.pop(pos)
-    return program
+class NOS(RegularizedEvolution):
+    @staticmethod
+    def evaluate_element(element, **kwargs):
+        torch.manual_seed(123)
+        model = torch.nn.Linear(2, 1)
+        optimizer_class = create_optimizer(element)
+        optim = optimizer_class(model.parameters(), lr=0.01)
+        initial_loss = torch.nn.functional.mse_loss(
+            model(torch.tensor([0.25, 0.25])), torch.tensor([10.0])
+        ).item()
+        for _ in range(1000):
+            output = model(torch.tensor([0.25, -0.25]))
+            loss = torch.nn.functional.mse_loss(output, torch.tensor([10.0]))
+            optim.zero_grad()
+            loss.backward()
+            optim.step()
+            loss = loss.item()
+        return -loss
+
+    @staticmethod
+    def random_element(rng, **kwargs):
+        program_setup = []
+        program_step = []
+        for _ in range(rng.randint(0, 10)):
+            instruction = random_setup_instruction(rng, MAX_MEMORY, 1)
+            program_setup.append(instruction)
+
+        for _ in range(rng.randint(0, 10)):
+            instruction = random_step_instruction(rng, MAX_MEMORY, 2)
+            program_step.append(instruction)
+        return Program(program_setup, program_step)
+
+    @staticmethod
+    def mutate_element(element, rng, **kwargs):
+        mutation_type = rng.randint(0, 2)
+        if mutation_type == 0:
+            child = add_instruction_mutation(element, rng)
+        elif mutation_type == 1:
+            child = remove_instruction_mutation(element, rng)
+        return child
+
+re = NOS(100, 25, rng=np.random.RandomState(123))
+for _ in range(10000):
+    print(max(re.history, key=lambda x: x.fitness))
+    re.step()
+
+exit()
+
 
 def change_setup_mutation(program):
     program = Program(*program)
