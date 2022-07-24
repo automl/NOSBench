@@ -50,6 +50,7 @@ Adagrad = Program(
 
 if __name__ == "__main__":
     import unittest
+
     class TestOptimum(unittest.TestCase):
         def train(self, optimizer_class, **kwargs):
             torch.manual_seed(123)
@@ -89,6 +90,5 @@ if __name__ == "__main__":
             ground_truth = self.train(torch.optim.Adagrad, lr=0.01)
             loss = self.train(create_optimizer(Adagrad), lr=0.01)
             torch.testing.assert_close(ground_truth, loss)
-
 
     unittest.main(exit=False)

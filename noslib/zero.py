@@ -12,7 +12,35 @@ import torch
 
 
 Pointer = NewType("Pointer", int)
-Program = NewType("Program", list)
+
+
+class Program:
+    __slots__ = "instructions"
+
+    def __init__(self, instructions):
+        self.instructions = instructions
+
+    def __getitem__(self, idx):
+        return Program(self.instructions[idx])
+
+    @staticmethod
+    def rosenbrock(data):
+        return torch.sum(100 * (data[1:] - data[:-1] ** 2) ** 2 + (1 - data[:-1]) ** 2)
+
+    def __hash__(self):
+        rng = torch.Generator()
+        rng = rng.manual_seed(123)
+        params = torch.nn.Parameter(torch.rand(256, generator=rng) * 2 - 1)
+        optimizer_class = create_optimizer(self, default_lr=0.0001)
+        optim = optimizer_class([params])
+        output_string = ""
+        for _ in range(300):
+            output = self.rosenbrock(params)
+            optim.zero_grad()
+            output.backward()
+            optim.step()
+            output_string += f"{output:.3f}".replace(".", "")
+        return int(output_string[-19:])
 
 
 class Function:
@@ -115,7 +143,7 @@ def create_optimizer(program, default_lr=1e-3):
                         d_p = 0.0  # If program is empty no updates
 
                         # Execute the program
-                        for instruction in program:
+                        for instruction in program.instructions:
                             assert instruction.out > 6
                             d_p = instruction.execute(self.memory[p])
 
