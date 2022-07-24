@@ -1,8 +1,7 @@
 from dataclasses import dataclass
-from typing import Optional, Callable, NewType
+from typing import Callable, NewType, Optional
 
 import torch
-
 
 """
 - Hyperparameters are fixed
@@ -29,6 +28,7 @@ class Function:
 UnaryFunction = type("UnaryFunction", (Function,), {})
 BinaryFunction = type("BinaryFunction", (Function,), {})
 DMABinaryFunction = type("DMABinaryFunction", (BinaryFunction,), {})
+DMAUnaryFunction = type("DMAUnaryFunction", (UnaryFunction,), {})
 
 
 class TensorMemory(list):
@@ -61,8 +61,10 @@ class Instruction:
     out: Pointer
 
     def execute(self, memory):
-        if isinstance(self.op, UnaryFunction):
+        if type(self.op) == UnaryFunction:
             output = self.op(memory[self.in1])
+        elif type(self.op) == DMAUnaryFunction:
+            output = self.op(memory[self.in1], memory)
         elif type(self.op) == BinaryFunction:
             output = self.op(memory[self.in1], memory[self.in2])
         elif isinstance(self.op, DMABinaryFunction):
@@ -71,6 +73,7 @@ class Instruction:
         return output
 
 
+# TODO: Detect use of other hyperparameters and include in the constructor
 def create_optimizer(program, default_lr=1e-3):
     class Optimizer(torch.optim.Optimizer):
         def __init__(self, params, lr=default_lr):
@@ -123,53 +126,27 @@ def create_optimizer(program, default_lr=1e-3):
     return Optimizer
 
 
-def _interpolate(x1, x2, memory, beta_loc):
-    beta1 = memory[beta_loc]
-    step = memory[2]
-    bias_correction = 1 - torch.pow(beta1, step)
-    y = x1 * beta1 + x2 * (1 - beta1)
-    return y / bias_correction
+def _bias_correct(x1, beta, step):
+    bias_correction = 1.0 - torch.pow(beta, step)
+    return x1 / bias_correction
+
+
+def bias_correct1(x1, memory):
+    return _bias_correct(x1, memory[3], memory[2])
+
+
+def bias_correct2(x1, memory):
+    return _bias_correct(x1, memory[3], memory[2])
+
+
+def _interpolate(x1, x2, beta):
+    y = x1 * beta + x2 * (1.0 - beta)
+    return y
 
 
 def interpolate1(x1, x2, memory):
-    return _interpolate(x1, x2, memory, 3)
+    return _interpolate(x1, x2, memory[3])
 
 
 def interpolate2(x1, x2, memory):
-    return _interpolate(x1, x2, memory, 4)
-
-
-if __name__ == "__main__":
-    # Memory positions (0-6) are reserved
-    # AdamW
-    program = Program(
-        [
-            Instruction(UnaryFunction(torch.square), Pointer(1), None, Pointer(7)),
-            Instruction(DMABinaryFunction(interpolate1), Pointer(1), Pointer(8), Pointer(8)),
-            Instruction(DMABinaryFunction(interpolate2), Pointer(7), Pointer(9), Pointer(9)),
-            Instruction(UnaryFunction(torch.sqrt), Pointer(9), None, Pointer(7)),
-            Instruction(BinaryFunction(torch.add), Pointer(7), Pointer(6), Pointer(7)),
-            Instruction(BinaryFunction(torch.div), Pointer(8), Pointer(7), Pointer(10)),
-            Instruction(BinaryFunction(torch.mul), Pointer(0), Pointer(5), Pointer(11)),
-            Instruction(BinaryFunction(torch.add), Pointer(10), Pointer(11), Pointer(10)),
-        ]
-    )
-
-    torch.manual_seed(123)
-    model = torch.nn.Linear(1, 1)
-    optimizer_class = create_optimizer(program)
-    optim = optimizer_class(model.parameters(), lr=0.01)
-    # optim = torch.optim.RMSprop(model.parameters(), lr=0.01)
-    initial_loss = torch.nn.functional.mse_loss(model(torch.tensor([1.0])), torch.tensor([1.0])).item()
-    import time
-
-    prev_time = time.time()
-    for _ in range(1000):
-        output = model(torch.tensor([1.0]))
-        loss = torch.nn.functional.mse_loss(output, torch.tensor([1.0]))
-        optim.zero_grad()
-        loss.backward()
-        optim.step()
-        loss = loss.item()
-    print(f"Initial Loss: {initial_loss}, Final Loss: {loss}")
-    print(f"Elapsed seconds: {time.time() - prev_time}")
+    return _interpolate(x1, x2, memory[4])
