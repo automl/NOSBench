@@ -27,7 +27,7 @@ SGD = Program(
     ]
 )
 
-RMSProp = Program(
+RMSprop = Program(
     [
         Instruction(UnaryFunction(torch.square), Pointer(1), None, Pointer(7)),
         Instruction(DMABinaryFunction(interpolate2), Pointer(8), Pointer(7), Pointer(8)),
@@ -49,23 +49,46 @@ Adagrad = Program(
 
 
 if __name__ == "__main__":
-    torch.manual_seed(123)
-    model = torch.nn.Linear(1, 1)
-    optimizer_class = create_optimizer(Adam)
-    optim = optimizer_class(model.parameters(), lr=0.01)
-    # optim = torch.optim.RMSprop(model.parameters(), lr=0.01, alpha=0.999)
-    # optim = torch.optim.AdamW(model.parameters(), lr=0.01, betas=(0.9, 0.999), weight_decay=0.0099999)
-    # optim = torch.optim.Adagrad(model.parameters(), lr=0.01)
-    initial_loss = torch.nn.functional.mse_loss(model(torch.tensor([1.0])), torch.tensor([1.0])).item()
-    import time
+    import unittest
+    class TestOptimum(unittest.TestCase):
+        def train(self, optimizer_class, **kwargs):
+            torch.manual_seed(123)
+            model = torch.nn.Linear(1, 1)
+            optim = optimizer_class(model.parameters(), **kwargs)
+            initial_loss = torch.nn.functional.mse_loss(model(torch.tensor([1.0])), torch.tensor([1.0])).item()
+            for _ in range(1000):
+                output = model(torch.tensor([1.0]))
+                loss = torch.nn.functional.mse_loss(output, torch.tensor([1.0]))
+                optim.zero_grad()
+                loss.backward()
+                optim.step()
+                loss = loss.item()
+            return loss
 
-    prev_time = time.time()
-    for _ in range(1000):
-        output = model(torch.tensor([1.0]))
-        loss = torch.nn.functional.mse_loss(output, torch.tensor([1.0]))
-        optim.zero_grad()
-        loss.backward()
-        optim.step()
-        loss = loss.item()
-    print(f"Initial Loss: {initial_loss}, Final Loss: {loss}")
-    print(f"Elapsed seconds: {time.time() - prev_time}")
+        def test_sgd(self):
+            ground_truth = self.train(torch.optim.SGD, lr=0.01, momentum=0.9)
+            loss = self.train(create_optimizer(SGD), lr=0.01)
+            torch.testing.assert_close(ground_truth, loss)
+
+        def test_adamw(self):
+            ground_truth = self.train(torch.optim.AdamW, lr=0.01, betas=(0.9, 0.999), weight_decay=1e-2)
+            loss = self.train(create_optimizer(AdamW), lr=0.01)
+            torch.testing.assert_close(ground_truth, loss)
+
+        def test_adam(self):
+            ground_truth = self.train(torch.optim.Adam, lr=0.01, betas=(0.9, 0.999))
+            loss = self.train(create_optimizer(Adam), lr=0.01)
+            torch.testing.assert_close(ground_truth, loss)
+
+        def test_rmsprop(self):
+            ground_truth = self.train(torch.optim.RMSprop, lr=0.01, alpha=0.999)
+            loss = self.train(create_optimizer(RMSprop), lr=0.01)
+            torch.testing.assert_close(ground_truth, loss)
+
+        def test_adagrad(self):
+            ground_truth = self.train(torch.optim.Adagrad, lr=0.01)
+            loss = self.train(create_optimizer(Adagrad), lr=0.01)
+            torch.testing.assert_close(ground_truth, loss)
+
+
+    unittest.main(exit=False)
