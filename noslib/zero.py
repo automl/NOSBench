@@ -1,25 +1,38 @@
 from dataclasses import dataclass
-from typing import Optional, Callable
-from collections import namedtuple, defaultdict
-from enum import IntEnum
-from functools import partial
+from typing import Optional, Callable, NewType
 
 import torch
-from torch import nn
 
 
-Pointer = namedtuple("Pointer", "name index")
-Program = namedtuple("Program", "setup step")
+"""
+- Hyperparameters are fixed
+- Memory Structure: [weights, gradients, step, lr, beta1, beta2, eps, decay, ... zero]
+- Return last instructions output as update, empty program has 0 update
+- Instructions: unary, binary, direct memory access operations
+"""
 
 
-class MemoryType(IntEnum):
-    SCALAR = 0
-    VECTOR = 1
+Pointer = NewType("Pointer", int)
+Program = NewType("Program", list)
+
+
+class Function:
+    __slots__ = "func"
+
+    def __init__(self, func):
+        self.func = func
+
+    def __call__(self, *args, **kwargs):
+        return self.func(*args, **kwargs)
+
+
+UnaryFunction = type("UnaryFunction", (Function,), {})
+BinaryFunction = type("BinaryFunction", (Function,), {})
+DMABinaryFunction = type("DMABinaryFunction", (BinaryFunction,), {})
 
 
 class TensorMemory(list):
-    def __init__(self, iterable=(), initializer=lambda: torch.tensor(0)):
-        self.initializer = initializer
+    def __init__(self, iterable=()):
         assert all([isinstance(x, torch.Tensor) for x in iterable])
         super().__init__(iterable)
 
@@ -27,13 +40,16 @@ class TensorMemory(list):
         assert isinstance(item, torch.Tensor)
         list.append(self, item)
 
-    def __getitem__(self, item):
-        if item < self.__len__():
-            return list.__getitem__(self, item)
+    def __getitem__(self, idx):
+        if idx < self.__len__():
+            return list.__getitem__(self, idx)
         else:
-            while not self.__len__() > item:
-                self.append(self.initializer())
-            return self[item]
+            if self.__len__() == 0:
+                raise ValueError("Empty memory: Can not determine the type from first item")
+            while not self.__len__() > idx:
+                tensor = list.__getitem__(self, 0)
+                self.append(torch.zeros_like(tensor))
+            return self[idx]
 
 
 @dataclass
@@ -45,14 +61,13 @@ class Instruction:
     out: Pointer
 
     def execute(self, memory):
-        if self.in2 is None:
-            output = self.op(memory[self.in1.name][self.in1.index])
-        else:
-            output = self.op(
-                memory[self.in1.name][self.in1.index],
-                memory[self.in2.name][self.in2.index],
-            )
-        memory[self.out.name][self.out.index].data = output.data
+        if isinstance(self.op, UnaryFunction):
+            output = self.op(memory[self.in1])
+        elif type(self.op) == BinaryFunction:
+            output = self.op(memory[self.in1], memory[self.in2])
+        elif isinstance(self.op, DMABinaryFunction):
+            output = self.op(memory[self.in1], memory[self.in2], memory)
+        memory[self.out].data = output.data
         return output
 
 
@@ -60,11 +75,7 @@ def create_optimizer(program, default_lr=1e-3):
     class Optimizer(torch.optim.Optimizer):
         def __init__(self, params, lr=default_lr):
             defaults = dict(lr=lr)
-
-            def empty_bank():
-                return [[] for _ in range(len(MemoryType))]
-
-            self.memory = defaultdict(empty_bank)
+            self.memory = {}
             super(Optimizer, self).__init__(params, defaults)
 
         @torch.no_grad()
@@ -77,31 +88,33 @@ def create_optimizer(program, default_lr=1e-3):
                 for p in group["params"]:
                     if p.grad is not None:
                         state = self.state[p]
-                        memory = self.memory[p]
                         if len(state) == 0:
                             # Initialize vector memory
-                            memory[MemoryType.VECTOR] = TensorMemory(
-                                [p.grad, p], partial(torch.zeros_like, p.grad)
-                            )
-
-                            # Initialize scalar memory
+                            beta1 = torch.tensor(0.9)
+                            beta2 = torch.tensor(0.999)
+                            eps = torch.tensor(1e-8)
+                            weight_decay = torch.tensor(1e-2)
                             state["step"] = torch.tensor(0.0)
-                            memory[MemoryType.SCALAR] = TensorMemory(
-                                [state["step"]], partial(torch.tensor, 1.0)
+                            self.memory[p] = TensorMemory(
+                                [
+                                    p,
+                                    p.grad,
+                                    state["step"],
+                                    beta1,
+                                    beta2,
+                                    weight_decay,
+                                    eps,
+                                ]
                             )
-
-                            # Execute setup instructions
-                            for instruction in program.setup:
-                                instruction.execute(memory)
 
                         state["step"] += 1
 
-                        # d_p = p.grad # If program is empty do an SGD update
-                        d_p = 0.0
+                        d_p = 0.0  # If program is empty no updates
 
-                        # Execute step instructions
-                        for instruction in program.step:
-                            d_p = instruction.execute(memory)
+                        # Execute the program
+                        for instruction in program:
+                            assert instruction.out > 6
+                            d_p = instruction.execute(self.memory[p])
 
                         # Update weights
                         p.add_(d_p, alpha=-self.defaults["lr"])
@@ -110,85 +123,36 @@ def create_optimizer(program, default_lr=1e-3):
     return Optimizer
 
 
+def _interpolate(x1, x2, memory, beta_loc):
+    beta1 = memory[beta_loc]
+    step = memory[2]
+    bias_correction = 1 - torch.pow(beta1, step)
+    y = x1 * beta1 + x2 * (1 - beta1)
+    return y / bias_correction
+
+
+def interpolate1(x1, x2, memory):
+    return _interpolate(x1, x2, memory, 3)
+
+
+def interpolate2(x1, x2, memory):
+    return _interpolate(x1, x2, memory, 4)
+
+
 if __name__ == "__main__":
-    # RMSProp
+    # Memory positions (0-6) are reserved
+    # AdamW
     program = Program(
-        setup=[
-            Instruction(
-                torch.exp,
-                Pointer(MemoryType.SCALAR, 5),
-                None,
-                Pointer(MemoryType.SCALAR, 6),
-            ),
-            Instruction(
-                torch.div,
-                Pointer(MemoryType.SCALAR, 5),
-                Pointer(MemoryType.SCALAR, 6),
-                Pointer(MemoryType.SCALAR, 1),
-            ),
-            Instruction(
-                torch.sub,
-                Pointer(MemoryType.SCALAR, 5),
-                Pointer(MemoryType.SCALAR, 1),
-                Pointer(MemoryType.SCALAR, 2),
-            ),
-            Instruction(
-                torch.exp,
-                Pointer(MemoryType.SCALAR, 2),
-                None,
-                Pointer(MemoryType.SCALAR, 7),
-            ),
-            Instruction(
-                torch.sub,
-                Pointer(MemoryType.SCALAR, 7),
-                Pointer(MemoryType.SCALAR, 5),
-                Pointer(MemoryType.SCALAR, 3),
-            ),
-            Instruction(
-                torch.sub,
-                Pointer(MemoryType.SCALAR, 5),
-                Pointer(MemoryType.SCALAR, 3),
-                Pointer(MemoryType.SCALAR, 4),
-            ),
-        ],
-        step=[
-            Instruction(
-                torch.mul,
-                Pointer(MemoryType.VECTOR, 0),
-                Pointer(MemoryType.VECTOR, 0),
-                Pointer(MemoryType.VECTOR, 2),
-            ),
-            Instruction(
-                torch.mul,
-                Pointer(MemoryType.VECTOR, 2),
-                Pointer(MemoryType.SCALAR, 4),
-                Pointer(MemoryType.VECTOR, 3),
-            ),
-            Instruction(
-                torch.mul,
-                Pointer(MemoryType.VECTOR, 4),
-                Pointer(MemoryType.SCALAR, 3),
-                Pointer(MemoryType.VECTOR, 4),
-            ),
-            Instruction(
-                torch.add,
-                Pointer(MemoryType.VECTOR, 4),
-                Pointer(MemoryType.VECTOR, 3),
-                Pointer(MemoryType.VECTOR, 4),
-            ),
-            Instruction(
-                torch.sqrt,
-                Pointer(MemoryType.VECTOR, 4),
-                None,
-                Pointer(MemoryType.VECTOR, 5),
-            ),
-            Instruction(
-                torch.div,
-                Pointer(MemoryType.VECTOR, 0),
-                Pointer(MemoryType.VECTOR, 5),
-                Pointer(MemoryType.VECTOR, 6),
-            ),
-        ],
+        [
+            Instruction(UnaryFunction(torch.square), Pointer(1), None, Pointer(7)),
+            Instruction(DMABinaryFunction(interpolate1), Pointer(1), Pointer(8), Pointer(8)),
+            Instruction(DMABinaryFunction(interpolate2), Pointer(7), Pointer(9), Pointer(9)),
+            Instruction(UnaryFunction(torch.sqrt), Pointer(9), None, Pointer(7)),
+            Instruction(BinaryFunction(torch.add), Pointer(7), Pointer(6), Pointer(7)),
+            Instruction(BinaryFunction(torch.div), Pointer(8), Pointer(7), Pointer(10)),
+            Instruction(BinaryFunction(torch.mul), Pointer(0), Pointer(5), Pointer(11)),
+            Instruction(BinaryFunction(torch.add), Pointer(10), Pointer(11), Pointer(10)),
+        ]
     )
 
     torch.manual_seed(123)
@@ -196,10 +160,9 @@ if __name__ == "__main__":
     optimizer_class = create_optimizer(program)
     optim = optimizer_class(model.parameters(), lr=0.01)
     # optim = torch.optim.RMSprop(model.parameters(), lr=0.01)
-    initial_loss = torch.nn.functional.mse_loss(
-        model(torch.tensor([1.0])), torch.tensor([1.0])
-    ).item()
+    initial_loss = torch.nn.functional.mse_loss(model(torch.tensor([1.0])), torch.tensor([1.0])).item()
     import time
+
     prev_time = time.time()
     for _ in range(1000):
         output = model(torch.tensor([1.0]))
