@@ -131,17 +131,9 @@ def _bias_correct(x1, beta, step):
     return x1 / bias_correction
 
 
-def bias_correct1(x1, memory):
-    return _bias_correct(x1, memory[3], memory[2])
-
-
-def bias_correct2(x1, memory):
-    return _bias_correct(x1, memory[3], memory[2])
-
-
 def _interpolate(x1, x2, beta):
-    y = x1 * beta + x2 * (1.0 - beta)
-    return y
+    x1.data = x1 * beta + x2 * (1.0 - beta)
+    return x1
 
 
 def interpolate1(x1, x2, memory):
@@ -150,3 +142,16 @@ def interpolate1(x1, x2, memory):
 
 def interpolate2(x1, x2, memory):
     return _interpolate(x1, x2, memory[4])
+
+
+def _interpolate_bc(x1, x2, beta, step):
+    y = _interpolate(x1, x2, beta)
+    return _bias_correct(y, beta, step)
+
+
+def interpolate_bc1(x1, x2, memory):
+    return _interpolate_bc(x1, x2, memory[3], memory[2])
+
+
+def interpolate_bc2(x1, x2, memory):
+    return _interpolate_bc(x1, x2, memory[4], memory[2])
