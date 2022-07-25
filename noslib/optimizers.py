@@ -18,7 +18,7 @@ AdamW = Program(
     ]
 )
 
-Adam = AdamW[:-2]
+Adam = Program(AdamW[:-2])
 
 SGD = Program(
     [

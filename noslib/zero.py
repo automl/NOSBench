@@ -21,26 +21,26 @@ class Program:
         self.instructions = instructions
 
     def __getitem__(self, idx):
-        return Program(self.instructions[idx])
+        return self.instructions[idx]
 
     @staticmethod
-    def rosenbrock(data):
+    def _rosenbrock(data):
         return torch.sum(100 * (data[1:] - data[:-1] ** 2) ** 2 + (1 - data[:-1]) ** 2)
 
     def __hash__(self):
-        rng = torch.Generator()
-        rng = rng.manual_seed(123)
-        params = torch.nn.Parameter(torch.rand(256, generator=rng) * 2 - 1)
+        params = torch.nn.Parameter(-torch.ones(32))
         optimizer_class = create_optimizer(self, default_lr=0.0001)
         optim = optimizer_class([params])
         output_string = ""
-        for _ in range(300):
-            output = self.rosenbrock(params)
+        for _ in range(50):
+            output = self._rosenbrock(params)
             optim.zero_grad()
             output.backward()
             optim.step()
-            output_string += f"{output:.3f}".replace(".", "")
-        return int(output_string[-19:])
+            if torch.isinf(output) or torch.isnan(output):
+                return -2
+            output_string += f"{output:.5f}".replace(".", "")
+        return int(output_string.replace("0", "")[-18:])
 
 
 class Function:
@@ -57,27 +57,6 @@ UnaryFunction = type("UnaryFunction", (Function,), {})
 BinaryFunction = type("BinaryFunction", (Function,), {})
 DMABinaryFunction = type("DMABinaryFunction", (BinaryFunction,), {})
 DMAUnaryFunction = type("DMAUnaryFunction", (UnaryFunction,), {})
-
-
-class TensorMemory(list):
-    def __init__(self, iterable=()):
-        assert all([isinstance(x, torch.Tensor) for x in iterable])
-        super().__init__(iterable)
-
-    def append(self, item):
-        assert isinstance(item, torch.Tensor)
-        list.append(self, item)
-
-    def __getitem__(self, idx):
-        if idx < self.__len__():
-            return list.__getitem__(self, idx)
-        else:
-            if self.__len__() == 0:
-                raise ValueError("Empty memory: Can not determine the type from first item")
-            while not self.__len__() > idx:
-                tensor = list.__getitem__(self, 0)
-                self.append(torch.zeros_like(tensor))
-            return self[idx]
 
 
 @dataclass
@@ -99,6 +78,27 @@ class Instruction:
             output = self.op(memory[self.in1], memory[self.in2], memory)
         memory[self.out].data = output.data
         return output
+
+
+class TensorMemory(list):
+    def __init__(self, iterable=()):
+        assert all([isinstance(x, torch.Tensor) for x in iterable])
+        super().__init__(iterable)
+
+    def append(self, item):
+        assert isinstance(item, torch.Tensor)
+        list.append(self, item)
+
+    def __getitem__(self, idx):
+        if idx < self.__len__():
+            return list.__getitem__(self, idx)
+        else:
+            if self.__len__() == 0:
+                raise ValueError("Empty memory: Can not determine the type from first item")
+            while not self.__len__() > idx:
+                tensor = list.__getitem__(self, 0)
+                self.append(torch.zeros_like(tensor))
+            return self[idx]
 
 
 # TODO: Detect use of other hyperparameters and include in the constructor
