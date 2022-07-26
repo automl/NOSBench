@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from typing import Callable, NewType, Optional
+import pprint
 
 import torch
 
@@ -23,9 +24,21 @@ class Program:
     def __getitem__(self, idx):
         return self.instructions[idx]
 
+    def __len__(self):
+        return len(self.instructions)
+
     @staticmethod
     def _rosenbrock(data):
         return torch.sum(100 * (data[1:] - data[:-1] ** 2) ** 2 + (1 - data[:-1]) ** 2)
+
+    def __eq__(self, other):
+        return hash(self) == hash(other)
+
+    def __str__(self):
+        return pprint.pformat(self.instructions)
+
+    def __repr__(self):
+        return str(self.instructions)
 
     def __hash__(self):
         params = torch.nn.Parameter(-torch.ones(32))
@@ -51,6 +64,12 @@ class Function:
 
     def __call__(self, *args, **kwargs):
         return self.func(*args, **kwargs)
+
+    def __str__(self):
+        return str(self.func)
+
+    def __repr__(self):
+        return str(self.func)
 
 
 UnaryFunction = type("UnaryFunction", (Function,), {})
@@ -154,14 +173,8 @@ def create_optimizer(program, default_lr=1e-3):
     return Optimizer
 
 
-def _bias_correct(x1, beta, step):
-    bias_correction = 1.0 - torch.pow(beta, step)
-    return x1 / bias_correction
-
-
 def _interpolate(x1, x2, beta):
-    x1.data = x1 * beta + x2 * (1.0 - beta)
-    return x1
+    return x1 * beta + x2 * (1.0 - beta)
 
 
 def interpolate1(x1, x2, memory):
@@ -172,14 +185,14 @@ def interpolate2(x1, x2, memory):
     return _interpolate(x1, x2, memory[4])
 
 
-def _interpolate_bc(x1, x2, beta, step):
-    y = _interpolate(x1, x2, beta)
-    return _bias_correct(y, beta, step)
+def _bias_correct(x1, beta, step):
+    bias_correction = 1.0 - torch.pow(beta, step)
+    return x1 / bias_correction
 
 
-def interpolate_bc1(x1, x2, memory):
-    return _interpolate_bc(x1, x2, memory[3], memory[2])
+def bias_correct1(x1, memory):
+    return _bias_correct(x1, memory[3], memory[2])
 
 
-def interpolate_bc2(x1, x2, memory):
-    return _interpolate_bc(x1, x2, memory[4], memory[2])
+def bias_correct2(x1, memory):
+    return _bias_correct(x1, memory[4], memory[2])

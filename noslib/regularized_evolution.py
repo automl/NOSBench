@@ -1,6 +1,7 @@
 import abc
 from functools import partial
 from collections import namedtuple
+import copy
 
 import numpy as np
 
@@ -9,9 +10,7 @@ _Element = namedtuple("_Element", "cls fitness")
 
 
 class RegularizedEvolution(abc.ABC):
-    def __init__(
-        self, population_size, tournament_size, rng=np.random.RandomState(), **kwargs
-    ):
+    def __init__(self, population_size, tournament_size, rng=np.random.RandomState(), **kwargs):
         self.population_size = population_size
         self.tournament_size = tournament_size
         self.rng = rng
@@ -46,7 +45,7 @@ class RegularizedEvolution(abc.ABC):
         idxs = self.rng.randint(0, self.population_size, self.tournament_size)
         samples = [self.population[idx] for idx in idxs]
         parent = max(samples, key=lambda x: x.fitness)
-        child = self._mutate_element(parent.cls)
+        child = self._mutate_element(copy.deepcopy(parent.cls))
         child = _Element(child, self._evaluate_element(child))
         self.population.append(child)
         self.history.append(child)
@@ -59,17 +58,8 @@ if __name__ == "__main__":
     class Ackley(RegularizedEvolution):
         @staticmethod
         def evaluate_element(element, **kwargs):
-            first_term = -20 * np.exp(
-                -0.2 * np.sqrt(0.5 * (element.x**2 + element.y**2))
-            )
-            second_term = (
-                -np.exp(
-                    0.5
-                    * (np.cos(2 * np.pi * element.x) + np.cos(2 * np.pi * element.y))
-                )
-                + np.e
-                + 20
-            )
+            first_term = -20 * np.exp(-0.2 * np.sqrt(0.5 * (element.x**2 + element.y**2)))
+            second_term = -np.exp(0.5 * (np.cos(2 * np.pi * element.x) + np.cos(2 * np.pi * element.y))) + np.e + 20
             return -(second_term + first_term)
 
         @staticmethod
