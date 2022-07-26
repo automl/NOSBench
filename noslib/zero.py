@@ -15,30 +15,13 @@ import torch
 Pointer = NewType("Pointer", int)
 
 
-class Program:
-    __slots__ = "instructions"
-
-    def __init__(self, instructions):
-        self.instructions = instructions
-
-    def __getitem__(self, idx):
-        return self.instructions[idx]
-
-    def __len__(self):
-        return len(self.instructions)
-
+class Program(list):
     @staticmethod
     def _rosenbrock(data):
         return torch.sum(100 * (data[1:] - data[:-1] ** 2) ** 2 + (1 - data[:-1]) ** 2)
 
     def __eq__(self, other):
         return hash(self) == hash(other)
-
-    def __str__(self):
-        return pprint.pformat(self.instructions)
-
-    def __repr__(self):
-        return str(self.instructions)
 
     def __hash__(self):
         params = torch.nn.Parameter(-torch.ones(32))
@@ -162,7 +145,7 @@ def create_optimizer(program, default_lr=1e-3):
                         d_p = 0.0  # If program is empty no updates
 
                         # Execute the program
-                        for instruction in program.instructions:
+                        for instruction in program:
                             assert instruction.out > 6
                             d_p = instruction.execute(self.memory[p])
 
