@@ -33,8 +33,10 @@ class Program(list):
             optim.zero_grad()
             output.backward()
             optim.step()
-            if torch.isinf(output) or torch.isnan(output):
+            if torch.isnan(output):
                 return -2
+            if torch.isinf(output):
+                return -3
             output_string += f"{output:.5f}".replace(".", "")
         return int(output_string.replace("0", "")[-18:])
 
