@@ -2,7 +2,7 @@ import copy
 
 import zero
 import noslib
-from regularized_evolution import RegularizedEvolution
+from regularized_evolution import RegularizedEvolution, _Element
 from optimizers import AdamW
 
 import torch
@@ -79,6 +79,7 @@ class NOS(RegularizedEvolution):
 def main():
     import pprint
 
+    # Regularized Evolution
     re = NOS(100, 25, rng=np.random.RandomState(123))
     for i in range(1000):
         x = max(re.history, key=lambda x: x.fitness)
@@ -90,6 +91,22 @@ def main():
     x = max(re.history, key=lambda x: x.fitness)
     pprint.pprint(zero.bruteforce_optimize(x.cls))
 
+    # Random Search
+    nos = noslib.NOSLib()
+    rng = np.random.RandomState(123)
+    history = []
+    for i in range(1000):
+        program = copy.deepcopy(AdamW)
+        for _ in range(rng.randint(0, 10)):
+            mutation_type = rng.randint(0, len(MUTATIONS))
+            program = MUTATIONS[mutation_type](program, rng)
+        fitness = -nos.query(program)
+        history.append(_Element(program, fitness))
+        x = max(history, key=lambda x: x.fitness)
+        print(f"Step: {i+1}, Fitness: {x.fitness}")
+
+    x = max(history, key=lambda x: x.fitness)
+    pprint.pprint(zero.bruteforce_optimize(x.cls))
 
 if __name__ == "__main__":
     main()
