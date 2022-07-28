@@ -58,7 +58,6 @@ if __name__ == "__main__":
             torch.manual_seed(123)
             model = torch.nn.Linear(1, 1)
             optim = optimizer_class(model.parameters(), **kwargs)
-            initial_loss = torch.nn.functional.mse_loss(model(torch.tensor([1.0])), torch.tensor([1.0])).item()
             for _ in range(1000):
                 output = model(torch.tensor([1.0]))
                 loss = torch.nn.functional.mse_loss(output, torch.tensor([1.0]))

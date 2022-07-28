@@ -1,8 +1,6 @@
 import copy
 
-from zero import Pointer, Instruction, Program
-from zero import create_optimizer
-from zero import UnaryFunction, BinaryFunction, DMABinaryFunction, DMAUnaryFunction
+import zero
 import noslib
 from regularized_evolution import RegularizedEvolution
 from optimizers import AdamW
@@ -14,14 +12,14 @@ import numpy as np
 MAX_MEMORY = 20
 
 ops = [
-    BinaryFunction(torch.div),
-    BinaryFunction(torch.mul),
-    BinaryFunction(torch.add),
-    BinaryFunction(torch.sub),
-    UnaryFunction(torch.square),
-    UnaryFunction(torch.exp),
-    UnaryFunction(torch.sign),
-    UnaryFunction(torch.sqrt),
+    zero.BinaryFunction(torch.div),
+    zero.BinaryFunction(torch.mul),
+    zero.BinaryFunction(torch.add),
+    zero.BinaryFunction(torch.sub),
+    zero.UnaryFunction(torch.square),
+    zero.UnaryFunction(torch.exp),
+    zero.UnaryFunction(torch.sign),
+    zero.UnaryFunction(torch.sqrt),
 ]
 
 
@@ -29,10 +27,10 @@ def add_instruction_mutation(program, rng):
     op = ops[rng.randint(0, len(ops))]
     in1 = rng.randint(0, MAX_MEMORY)
     in2 = None
-    if isinstance(op, BinaryFunction):
+    if isinstance(op, zero.BinaryFunction):
         in2 = rng.randint(0, MAX_MEMORY)
     out = rng.randint(7, MAX_MEMORY)
-    instruction = Instruction(op, Pointer(in1), Pointer(in2), Pointer(out))
+    instruction = zero.Instruction(op, zero.Pointer(in1), zero.Pointer(in2), zero.Pointer(out))
     pos = rng.randint(0, len(program) + 1)
     program.insert(pos, instruction)
     return program
@@ -50,7 +48,7 @@ def modify_instruction_mutation(program, rng):
         pos = rng.randint(0, len(program))
         instruction = program[pos]
         if rng.randint(0, 2) == 0:
-            input_idx = rng.randint(1, 2 if isinstance(instruction, UnaryFunction) else 3)
+            input_idx = rng.randint(1, 2 if isinstance(instruction, zero.UnaryFunction) else 3)
             setattr(instruction, f"in{input_idx}", rng.randint(0, MAX_MEMORY))
         else:
             instruction.out = rng.randint(7, MAX_MEMORY)
@@ -78,16 +76,24 @@ class NOS(RegularizedEvolution):
         return MUTATIONS[mutation_type](element, rng)
 
 
-re = NOS(100, 25, rng=np.random.RandomState(123))
-for i in range(1000):
-    x = max(re.history, key=lambda x: x.fitness)
-    print(f"Step: {i+1}, Fitness: {x.fitness}")
-    if x.fitness == 0.0:
-        break
-    re.step()
+def main():
+    import pprint
 
-x = max(re.history, key=lambda x: x.fitness)
-print(x.cls)
+    re = NOS(100, 25, rng=np.random.RandomState(123))
+    for i in range(1000):
+        x = max(re.history, key=lambda x: x.fitness)
+        print(f"Step: {i+1}, Fitness: {x.fitness}")
+        if x.fitness == 0.0:
+            break
+        re.step()
+
+    x = max(re.history, key=lambda x: x.fitness)
+    pprint.pprint(zero.bruteforce_optimize(x.cls))
+
+
+if __name__ == "__main__":
+    main()
+
 
 # [Instruction(op=sqrt, in1=18, in2=None, out=19),
 #  Instruction(op=square, in1=18, in2=None, out=9),

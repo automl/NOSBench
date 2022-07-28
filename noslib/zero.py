@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from typing import Callable, NewType, Optional
-import pprint
+import copy
 
 import torch
 
@@ -49,10 +49,10 @@ class Function:
         return self.func(*args, **kwargs)
 
     def __str__(self):
-        return str(self.func)
+        return str(self.func.__name__)
 
     def __repr__(self):
-        return str(self.func)
+        return str(self.func.__name__)
 
 
 UnaryFunction = type("UnaryFunction", (Function,), {})
@@ -80,6 +80,13 @@ class Instruction:
             output = self.op(memory[self.in1], memory[self.in2], memory)
         memory[self.out].data = output.data
         return output
+
+    def __str__(self):
+        in2 = f"in2={self.in2}, " if self.in2 is not None else ""
+        return f"{self.op}(in1={self.in1}, {in2}out={self.out})"
+
+    def __repr__(self):
+        return str(self)
 
 
 class TensorMemory(list):
@@ -154,6 +161,18 @@ def create_optimizer(program, default_lr=1e-3):
             return loss
 
     return Optimizer
+
+
+def bruteforce_optimize(program):
+    i = 0
+    while i < len(program):
+        program_copy = copy.deepcopy(program)
+        program_copy.pop(i)
+        if program_copy == program:
+            program = program_copy
+        else:
+            i += 1
+    return program
 
 
 def _interpolate(x1, x2, beta):

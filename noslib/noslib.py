@@ -1,26 +1,41 @@
+import pathlib
+
 import torch
+import numpy as np
 
 from zero import create_optimizer
 
 
 class NOSLib:
-    def __init__(self):
-        self.cache = {}
+    def __init__(self, path="cache"):
+        self.path = pathlib.Path(path)
+        self.path.mkdir(parents=True, exist_ok=True)
+        self._exists = set()
+        for run in self.path.glob("*.run"):
+            self._exists.add(int(run.stem))
+
+    @staticmethod
+    def _schaffer(data):
+        x = data[0]
+        y = data[1]
+        num = torch.sin(x**2 - y**2) ** 2 - 0.5
+        denom = (1 + 0.001 * (x**2 + y**2)) ** 2
+        return 0.5 + num / denom
 
     def query(self, program):
-        if program in self.cache:
-            return self.cache[program]
+        stem = hash(program)
+        if stem in self._exists:
+            return np.load((self.path / str(stem)).with_suffix(".run"))
         torch.manual_seed(123)
-        model = torch.nn.Linear(2, 1)
+        params = torch.nn.Parameter(torch.rand(2) * 200 - 100)
         optimizer_class = create_optimizer(program)
-        optim = optimizer_class(model.parameters(), lr=0.01)
-        initial_loss = torch.nn.functional.mse_loss(model(torch.tensor([0.25, 0.25])), torch.tensor([10.0])).item()
+        optim = optimizer_class([params], lr=0.001)
         for _ in range(100):
-            output = model(torch.tensor([0.25, -0.25]))
-            loss = torch.nn.functional.mse_loss(output, torch.tensor([10.0]))
+            output = self._schaffer(params)
             optim.zero_grad()
-            loss.backward()
+            output.backward()
             optim.step()
-            loss = loss.item()
-        self.cache[program] = loss
-        return loss
+        with open((self.path / str(stem)).with_suffix(".run"), "wb") as f:
+            np.save(f, output.item())
+            self._exists.add(stem)
+        return output.item()
