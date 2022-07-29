@@ -9,27 +9,16 @@ import torch
 import numpy as np
 
 
-MAX_MEMORY = 20
 
-ops = [
-    zero.BinaryFunction(torch.div),
-    zero.BinaryFunction(torch.mul),
-    zero.BinaryFunction(torch.add),
-    zero.BinaryFunction(torch.sub),
-    zero.UnaryFunction(torch.square),
-    zero.UnaryFunction(torch.exp),
-    zero.UnaryFunction(torch.sign),
-    zero.UnaryFunction(torch.sqrt),
-]
 
 
 def add_instruction_mutation(program, rng):
-    op = ops[rng.randint(0, len(ops))]
-    in1 = rng.randint(0, MAX_MEMORY)
+    op = noslib.ops[rng.randint(0, len(noslib.ops))]
+    in1 = rng.randint(0, noslib.MAX_MEMORY)
     in2 = None
     if isinstance(op, zero.BinaryFunction):
-        in2 = rng.randint(0, MAX_MEMORY)
-    out = rng.randint(7, MAX_MEMORY)
+        in2 = rng.randint(0, noslib.MAX_MEMORY)
+    out = rng.randint(7, noslib.MAX_MEMORY)
     instruction = zero.Instruction(op, zero.Pointer(in1), zero.Pointer(in2), zero.Pointer(out))
     pos = rng.randint(0, len(program) + 1)
     program.insert(pos, instruction)
@@ -49,9 +38,9 @@ def modify_instruction_mutation(program, rng):
         instruction = program[pos]
         if rng.randint(0, 2) == 0:
             input_idx = rng.randint(1, 2 if isinstance(instruction, zero.UnaryFunction) else 3)
-            setattr(instruction, f"in{input_idx}", rng.randint(0, MAX_MEMORY))
+            setattr(instruction, f"in{input_idx}", rng.randint(0, noslib.MAX_MEMORY))
         else:
-            instruction.out = rng.randint(7, MAX_MEMORY)
+            instruction.out = rng.randint(7, noslib.MAX_MEMORY)
     return program
 
 
