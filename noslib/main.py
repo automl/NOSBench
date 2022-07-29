@@ -5,11 +5,7 @@ import noslib
 from regularized_evolution import RegularizedEvolution, _Element
 from optimizers import AdamW
 
-import torch
 import numpy as np
-
-
-
 
 
 def add_instruction_mutation(program, rng):
@@ -96,6 +92,7 @@ def main():
 
     x = max(history, key=lambda x: x.fitness)
     pprint.pprint(zero.bruteforce_optimize(x.cls))
+
 
 if __name__ == "__main__":
     main()

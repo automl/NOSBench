@@ -15,9 +15,21 @@ ops = [
     zero.UnaryFunction(torch.exp),
     zero.UnaryFunction(torch.sign),
     zero.UnaryFunction(torch.sqrt),
+    zero.DMABinaryFunction(zero.interpolate1),
+    zero.DMABinaryFunction(zero.interpolate2),
+    zero.DMAUnaryFunction(zero.bias_correct1),
+    zero.DMAUnaryFunction(zero.bias_correct2),
 ]
+_op_dict = {str(op): op for op in ops}
 
-MAX_MEMORY = 20
+# TODO: Refactor read-only space
+# TODO: Move everything from zero to here
+# TODO: query add option to run even if it doesn't exists
+# TODO: Max length?
+# TODO: Every possible program
+
+MAX_MEMORY = 20  # TODO: Move this inside as property
+
 
 class NOSLib:
     def __init__(self, path="cache"):
@@ -54,35 +66,56 @@ class NOSLib:
         return output.item()
 
     @staticmethod
-    def configspace(min_sloc=1, max_sloc=10, seed=None):
+    def configspace(min_sloc=1, max_sloc=10, seed=None, default_program=[]):
         import ConfigSpace as cs
         import ConfigSpace.hyperparameters as csh
-        configuration_space = cs.ConfigurationSpace(seed)
-        sloc = csh.UniformIntegerHyperparameter('sloc', lower=min_sloc, upper=max_sloc)
+
+        configuration_space = cs.ConfigurationSpace(seed=seed)
+        sloc_default = len(default_program) if len(default_program) > 0 else None
+        sloc = csh.UniformIntegerHyperparameter("sloc", lower=min_sloc, upper=max_sloc, default_value=sloc_default)
         configuration_space.add_hyperparameter(sloc)
-        for i in range(min_sloc, max_sloc+1):
-            op = csh.CategoricalHyperparameter(f'op_{i}', choices=ops)
+        for idx, i in enumerate(range(min_sloc, max_sloc + 1)):
+            op_default = None
+            in1_default = None
+            in2_default = None
+            out_default = None
+            if idx < len(default_program):
+                instruction = default_program[idx]
+                op_default = str(instruction.op)
+                in1_default = instruction.in1
+                if isinstance(instruction.op, zero.BinaryFunction):
+                    in2_default = instruction.in2
+                out_default = instruction.out
+            op = csh.CategoricalHyperparameter(f"op_{idx}", choices=[str(op) for op in ops], default_value=op_default)
             lt = cs.GreaterThanCondition(op, sloc, i)
             eq = cs.EqualsCondition(op, sloc, i)
             configuration_space.add_hyperparameter(op)
             configuration_space.add_condition(cs.OrConjunction(lt, eq))
-
-            in1 = csh.UniformIntegerHyperparameter(f'in1_{i}', lower=0, upper=MAX_MEMORY)
-            in2 = csh.UniformIntegerHyperparameter(f'in2_{i}', lower=0, upper=MAX_MEMORY)
-            out = csh.UniformIntegerHyperparameter(f'out_{i}', lower=7, upper=MAX_MEMORY)
+            in1 = csh.UniformIntegerHyperparameter(f"in1_{idx}", lower=0, upper=MAX_MEMORY, default_value=in1_default)
+            in2 = csh.UniformIntegerHyperparameter(f"in2_{idx}", lower=0, upper=MAX_MEMORY, default_value=in2_default)
+            out = csh.UniformIntegerHyperparameter(f"out_{idx}", lower=7, upper=MAX_MEMORY, default_value=out_default)
             configuration_space.add_hyperparameters([in1, in2, out])
-            binary_ops = [op for op in ops if isinstance(op, zero.BinaryFunction)]
-            configuration_space.add_condition(cs.InCondition(in2, op, binary_ops))
+            lt = cs.GreaterThanCondition(in1, sloc, i)
+            eq = cs.EqualsCondition(in1, sloc, i)
+            configuration_space.add_condition(cs.OrConjunction(lt, eq))
+            lt = cs.GreaterThanCondition(out, sloc, i)
+            eq = cs.EqualsCondition(out, sloc, i)
+            configuration_space.add_condition(cs.OrConjunction(lt, eq))
+            binary_ops = [str(op) for op in ops if isinstance(op, zero.BinaryFunction)]
+            lt = cs.GreaterThanCondition(in2, sloc, i)
+            eq = cs.EqualsCondition(in2, sloc, i)
+            cond = cs.OrConjunction(lt, eq)
+            configuration_space.add_condition(cs.AndConjunction(cond, cs.InCondition(in2, op, binary_ops)))
         return configuration_space
 
     @staticmethod
     def configuration_to_program(config):
         program = zero.Program()
-        for i in range(1, config['sloc']+1):
-            op = config[f'op_{i}']
-            in1 = config[f'in1_{i}']
-            in2 = config[f'in2_{i}'] if isinstance(op, zero.BinaryFunction) else None
-            out = config[f'out_{i}']
+        for i in range(0, config["sloc"]):
+            op = _op_dict[config[f"op_{i}"]]
+            in1 = config[f"in1_{i}"]
+            in2 = config[f"in2_{i}"] if isinstance(op, zero.BinaryFunction) else None
+            out = config[f"out_{i}"]
             instruction = zero.Instruction(op, in1, in2, out)
             program.append(instruction)
         return program
