@@ -44,6 +44,3 @@ class TestOptimum(unittest.TestCase):
         ground_truth = self.train(torch.optim.Adagrad, lr=0.01)
         loss = self.train(create_optimizer(Adagrad), lr=0.01)
         torch.testing.assert_close(ground_truth, loss)
-
-
-unittest.main(exit=False)
