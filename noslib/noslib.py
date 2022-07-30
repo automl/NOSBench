@@ -5,7 +5,12 @@ import torch
 import numpy as np
 
 from noslib.program import Program, Instruction, Pointer, READONLY_REGION, MAX_MEMORY
-from noslib.function import UnaryFunction, BinaryFunction, DMABinaryFunction, DMAUnaryFunction
+from noslib.function import (
+    UnaryFunction,
+    BinaryFunction,
+    DMABinaryFunction,
+    DMAUnaryFunction,
+)
 from noslib.function import interpolate1, interpolate2, bias_correct1, bias_correct2
 from noslib.optimizers import AdamW
 
@@ -93,7 +98,12 @@ class NOSLib:
             configuration_space.add_condition(cs.OrConjunction(lt, eq))
             in1 = csh.UniformIntegerHyperparameter(f"in1_{idx}", lower=0, upper=MAX_MEMORY, default_value=in1_default)
             in2 = csh.UniformIntegerHyperparameter(f"in2_{idx}", lower=0, upper=MAX_MEMORY, default_value=in2_default)
-            out = csh.UniformIntegerHyperparameter(f"out_{idx}", lower=READONLY_REGION+1, upper=MAX_MEMORY, default_value=out_default)
+            out = csh.UniformIntegerHyperparameter(
+                f"out_{idx}",
+                lower=READONLY_REGION + 1,
+                upper=MAX_MEMORY,
+                default_value=out_default,
+            )
             configuration_space.add_hyperparameters([in1, in2, out])
             lt = cs.GreaterThanCondition(in1, sloc, i)
             eq = cs.EqualsCondition(in1, sloc, i)

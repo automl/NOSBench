@@ -83,7 +83,7 @@ def add_instruction_mutation(program, rng):
     in2 = None
     if isinstance(op, BinaryFunction):
         in2 = rng.randint(0, MAX_MEMORY)
-    out = rng.randint(READONLY_REGION+1, MAX_MEMORY)
+    out = rng.randint(READONLY_REGION + 1, MAX_MEMORY)
     instruction = Instruction(op, Pointer(in1), Pointer(in2), Pointer(out))
     pos = rng.randint(0, len(program) + 1)
     program.insert(pos, instruction)
@@ -105,7 +105,7 @@ def modify_instruction_mutation(program, rng):
             input_idx = rng.randint(1, 2 if isinstance(instruction, UnaryFunction) else 3)
             setattr(instruction, f"in{input_idx}", rng.randint(0, MAX_MEMORY))
         else:
-            instruction.out = rng.randint(READONLY_REGION+1, MAX_MEMORY)
+            instruction.out = rng.randint(READONLY_REGION + 1, MAX_MEMORY)
     return program
 
 

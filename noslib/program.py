@@ -4,7 +4,12 @@ from dataclasses import dataclass
 
 import torch
 
-from noslib.function import UnaryFunction, BinaryFunction, DMAUnaryFunction, DMABinaryFunction
+from noslib.function import (
+    UnaryFunction,
+    BinaryFunction,
+    DMAUnaryFunction,
+    DMABinaryFunction,
+)
 
 
 Pointer = NewType("Pointer", int)
