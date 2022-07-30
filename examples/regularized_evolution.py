@@ -1,13 +1,13 @@
 import abc
-from functools import partial, lru_cache
+from functools import partial
 from collections import namedtuple
 import copy
 import pprint
 
-from noslib.program import Program, Instruction, Pointer, bruteforce_optimize, READONLY_REGION, MAX_MEMORY
+from noslib.program import Instruction, Pointer, bruteforce_optimize, READONLY_REGION, MAX_MEMORY
 from noslib.function import UnaryFunction, BinaryFunction
 from noslib.noslib import NOSLib, OPS
-from noslib.optimizers import AdamW
+from noslib.optimizers import AdamW, SGD
 
 
 import numpy as np
@@ -60,16 +60,16 @@ class RegularizedEvolution(abc.ABC):
 
 
 class RE_NOS(RegularizedEvolution):
-    def __init__(self, population_size, tournament_size, rng=np.random.RandomState(), **kwargs):
+    def __init__(self, population_size, tournament_size, initial_program=AdamW, rng=np.random.RandomState(), **kwargs):
         self.noslib = NOSLib()
+        self.initial_program = initial_program
         super().__init__(population_size, tournament_size, rng, **kwargs)
 
     def evaluate_element(self, element, **kwargs):
         return -self.noslib.query(element)
 
-    @staticmethod
-    def random_element(rng, **kwargs):
-        return copy.deepcopy(AdamW)
+    def random_element(self, rng, **kwargs):
+        return copy.deepcopy(self.initial_program)
 
     @staticmethod
     def mutate_element(element, rng, **kwargs):
@@ -113,8 +113,8 @@ MUTATIONS = [add_instruction_mutation, remove_instruction_mutation, modify_instr
 
 
 if __name__ == "__main__":
-    re = RE_NOS(100, 25, rng=np.random.RandomState(123))
-    for i in range(2000):
+    re = RE_NOS(100, 25, rng=np.random.RandomState(123), initial_program=SGD)
+    for i in range(20000):
         x = max(re.history, key=lambda x: x.fitness)
         print(f"Step: {i+1}, Fitness: {x.fitness}")
         if x.fitness == 0.0:

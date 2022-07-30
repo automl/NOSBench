@@ -1,12 +1,11 @@
-import copy
 import pprint
+from collections import namedtuple
 
-import numpy as np
-
-from examples.regularized_evolution import MUTATIONS, _Element
 from noslib import NOSLib
 from noslib.program import bruteforce_optimize
-from noslib.optimizers import AdamW
+
+
+_Element = namedtuple("_Element", "cls fitness")
 
 
 if __name__ == "__main__":
@@ -15,7 +14,7 @@ if __name__ == "__main__":
     cs = nos.configspace(seed=123)
     history = []
 
-    for i in range(2000):
+    for i in range(20000):
         config = cs.sample_configuration()
         program = nos.configuration_to_program(config)
         fitness = -nos.query(program)

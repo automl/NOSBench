@@ -1,5 +1,4 @@
 import pathlib
-import copy
 
 import torch
 import numpy as np
@@ -34,6 +33,8 @@ _op_dict = {str(op): op for op in OPS}
 
 # TODO: Max length?
 # TODO: Every possible program
+# TODO: Allow caching instead of reading from disk everytime
+# TODO: device support
 
 
 class NOSLib:

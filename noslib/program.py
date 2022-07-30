@@ -89,11 +89,8 @@ class _TensorMemory(list):
         if idx < self.__len__():
             return list.__getitem__(self, idx)
         else:
-            if self.__len__() == 0:
-                raise ValueError("Empty memory: Can not determine the type from first item")
             while not self.__len__() > idx:
-                tensor = list.__getitem__(self, 0)
-                self.append(torch.zeros_like(tensor))
+                self.append(torch.tensor(0.0))
             return self[idx]
 
 
