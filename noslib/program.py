@@ -1,18 +1,17 @@
-from dataclasses import dataclass
-from typing import Callable, NewType, Optional
 import copy
+from typing import Callable, NewType, Optional, Type
+from dataclasses import dataclass
 
 import torch
 
-"""
-- Hyperparameters are fixed
-- Memory Structure: [weights, gradients, step, lr, beta1, beta2, eps, decay, ... zero]
-- Return last instructions output as update, empty program has 0 update
-- Instructions: unary, binary, direct memory access operations
-"""
+from noslib.function import UnaryFunction, BinaryFunction, DMAUnaryFunction, DMABinaryFunction
 
 
 Pointer = NewType("Pointer", int)
+
+
+READONLY_REGION = 6
+MAX_MEMORY = 20
 
 
 class Program(list):
@@ -25,7 +24,7 @@ class Program(list):
 
     def __hash__(self):
         params = torch.nn.Parameter(-torch.ones(32))
-        optimizer_class = create_optimizer(self, default_lr=0.0001)
+        optimizer_class = self.optimizer(default_lr=0.0001)
         optim = optimizer_class([params])
         output_string = ""
         for _ in range(50):
@@ -40,27 +39,8 @@ class Program(list):
             output_string += f"{output:.5f}".replace(".", "")
         return int(output_string.replace("0", "")[-18:])
 
-
-class Function:
-    __slots__ = "func"
-
-    def __init__(self, func):
-        self.func = func
-
-    def __call__(self, *args, **kwargs):
-        return self.func(*args, **kwargs)
-
-    def __str__(self):
-        return str(self.func.__name__)
-
-    def __repr__(self):
-        return str(self.func.__name__)
-
-
-UnaryFunction = type("UnaryFunction", (Function,), {})
-BinaryFunction = type("BinaryFunction", (Function,), {})
-DMABinaryFunction = type("DMABinaryFunction", (BinaryFunction,), {})
-DMAUnaryFunction = type("DMAUnaryFunction", (UnaryFunction,), {})
+    def optimizer(self, default_lr=1e-3) -> Type[torch.optim.Optimizer]:
+        return create_optimizer(self, default_lr)
 
 
 @dataclass
@@ -91,7 +71,7 @@ class Instruction:
         return str(self)
 
 
-class TensorMemory(list):
+class _TensorMemory(list):
     def __init__(self, iterable=()):
         assert all([isinstance(x, torch.Tensor) for x in iterable])
         super().__init__(iterable)
@@ -137,7 +117,7 @@ def create_optimizer(program, default_lr=1e-3):
                             eps = torch.tensor(1e-8)
                             weight_decay = torch.tensor(1e-2)
                             state["step"] = torch.tensor(0.0)
-                            self.memory[p] = TensorMemory(
+                            self.memory[p] = _TensorMemory(
                                 [
                                     p,
                                     p.grad,
@@ -155,7 +135,7 @@ def create_optimizer(program, default_lr=1e-3):
 
                         # Execute the program
                         for instruction in program:
-                            assert instruction.out > 6
+                            assert instruction.out > READONLY_REGION
                             d_p = instruction.execute(self.memory[p])
 
                         # Update weights
@@ -175,28 +155,3 @@ def bruteforce_optimize(program):
         else:
             i += 1
     return program
-
-
-def _interpolate(x1, x2, beta):
-    return x1 * beta + x2 * (1.0 - beta)
-
-
-def interpolate1(x1, x2, memory):
-    return _interpolate(x1, x2, memory[3])
-
-
-def interpolate2(x1, x2, memory):
-    return _interpolate(x1, x2, memory[4])
-
-
-def _bias_correct(x1, beta, step):
-    bias_correction = 1.0 - torch.pow(beta, step)
-    return x1 / bias_correction
-
-
-def bias_correct1(x1, memory):
-    return _bias_correct(x1, memory[3], memory[2])
-
-
-def bias_correct2(x1, memory):
-    return _bias_correct(x1, memory[4], memory[2])

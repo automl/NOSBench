@@ -1,8 +1,8 @@
 import torch
 
-from zero import Program, Instruction, Pointer
-from zero import UnaryFunction, BinaryFunction, DMABinaryFunction, DMAUnaryFunction
-from zero import create_optimizer, interpolate1, interpolate2, bias_correct1, bias_correct2
+from noslib.program import Program, Instruction, Pointer
+from noslib.function import UnaryFunction, BinaryFunction, DMABinaryFunction, DMAUnaryFunction
+from noslib.function import interpolate1, interpolate2, bias_correct1, bias_correct2
 
 
 AdamW = Program(
@@ -52,6 +52,7 @@ Adagrad = Program(
 
 if __name__ == "__main__":
     import unittest
+    from noslib.noslib import create_optimizer
 
     class TestOptimum(unittest.TestCase):
         def train(self, optimizer_class, **kwargs):
