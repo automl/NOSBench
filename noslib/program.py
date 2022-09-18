@@ -1,15 +1,8 @@
 import copy
-from typing import Callable, NewType, Optional, Type
+from typing import Callable, NewType, Optional, Type, List
 from dataclasses import dataclass
 
 import torch
-
-from noslib.function import (
-    UnaryFunction,
-    BinaryFunction,
-    DMAUnaryFunction,
-    DMABinaryFunction,
-)
 
 
 Pointer = NewType("Pointer", int)
@@ -50,27 +43,18 @@ class Program(list):
 
 @dataclass
 class Instruction:
-    __slots__ = "op", "in1", "in2", "out"
+    __slots__ = "op", "inputs", "output"
     op: Callable
-    in1: Pointer
-    in2: Optional[Pointer]
-    out: Pointer
+    inputs: List[Pointer]
+    output: Pointer
 
     def execute(self, memory):
-        if type(self.op) == UnaryFunction:
-            output = self.op(memory[self.in1])
-        elif type(self.op) == DMAUnaryFunction:
-            output = self.op(memory[self.in1], memory)
-        elif type(self.op) == BinaryFunction:
-            output = self.op(memory[self.in1], memory[self.in2])
-        elif isinstance(self.op, DMABinaryFunction):
-            output = self.op(memory[self.in1], memory[self.in2], memory)
-        memory[self.out].data = output.data
+        output = self.op([memory[inp] for inp in self.inputs])
+        memory[self.output].data = output.data
         return output
 
     def __str__(self):
-        in2 = f"in2={self.in2}, " if self.in2 is not None else ""
-        return f"{self.op}(in1={self.in1}, {in2}out={self.out})"
+        return f"{self.op}(inputs={self.inputs}, output={self.output})"
 
     def __repr__(self):
         return str(self)
@@ -137,7 +121,7 @@ def create_optimizer(program, default_lr=1e-3):
 
                         # Execute the program
                         for instruction in program:
-                            assert instruction.out > READONLY_REGION
+                            assert instruction.output > READONLY_REGION
                             d_p = instruction.execute(self.memory[p])
 
                         # Update weights

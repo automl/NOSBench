@@ -4,8 +4,13 @@ from collections import namedtuple
 import copy
 import pprint
 
-from noslib.program import Instruction, Pointer, bruteforce_optimize, READONLY_REGION, MAX_MEMORY
-from noslib.function import UnaryFunction, BinaryFunction
+from noslib.program import (
+    Instruction,
+    Pointer,
+    bruteforce_optimize,
+    READONLY_REGION,
+    MAX_MEMORY,
+)
 from noslib.noslib import NOSLib, OPS
 from noslib.optimizers import AdamW, SGD
 
@@ -17,7 +22,9 @@ _Element = namedtuple("_Element", "cls fitness")
 
 
 class RegularizedEvolution(abc.ABC):
-    def __init__(self, population_size, tournament_size, rng=np.random.RandomState(), **kwargs):
+    def __init__(
+        self, population_size, tournament_size, rng=np.random.RandomState(), **kwargs
+    ):
         self.population_size = population_size
         self.tournament_size = tournament_size
         self.rng = rng
@@ -60,7 +67,14 @@ class RegularizedEvolution(abc.ABC):
 
 
 class RE_NOS(RegularizedEvolution):
-    def __init__(self, population_size, tournament_size, initial_program=AdamW, rng=np.random.RandomState(), **kwargs):
+    def __init__(
+        self,
+        population_size,
+        tournament_size,
+        initial_program=AdamW,
+        rng=np.random.RandomState(),
+        **kwargs,
+    ):
         self.noslib = NOSLib()
         self.initial_program = initial_program
         super().__init__(population_size, tournament_size, rng, **kwargs)
@@ -79,12 +93,9 @@ class RE_NOS(RegularizedEvolution):
 
 def add_instruction_mutation(program, rng):
     op = OPS[rng.randint(0, len(OPS))]
-    in1 = rng.randint(0, MAX_MEMORY)
-    in2 = None
-    if isinstance(op, BinaryFunction):
-        in2 = rng.randint(0, MAX_MEMORY)
-    out = rng.randint(READONLY_REGION + 1, MAX_MEMORY)
-    instruction = Instruction(op, Pointer(in1), Pointer(in2), Pointer(out))
+    inputs = [Pointer(rng.randint(0, MAX_MEMORY)) for _ in range(op.n_args)]
+    output = rng.randint(READONLY_REGION + 1, MAX_MEMORY)
+    instruction = Instruction(op, inputs, Pointer(output))
     pos = rng.randint(0, len(program) + 1)
     program.insert(pos, instruction)
     return program
@@ -102,14 +113,18 @@ def modify_instruction_mutation(program, rng):
         pos = rng.randint(0, len(program))
         instruction = program[pos]
         if rng.randint(0, 2) == 0:
-            input_idx = rng.randint(1, 2 if isinstance(instruction, UnaryFunction) else 3)
-            setattr(instruction, f"in{input_idx}", rng.randint(0, MAX_MEMORY))
+            input_idx = rng.randint(0, instruction.op.n_args)
+            instruction.inputs[input_idx] = rng.randint(0, MAX_MEMORY)
         else:
-            instruction.out = rng.randint(READONLY_REGION + 1, MAX_MEMORY)
+            instruction.output = rng.randint(READONLY_REGION + 1, MAX_MEMORY)
     return program
 
 
-MUTATIONS = [add_instruction_mutation, remove_instruction_mutation, modify_instruction_mutation]
+MUTATIONS = [
+    add_instruction_mutation,
+    remove_instruction_mutation,
+    modify_instruction_mutation,
+]
 
 
 if __name__ == "__main__":

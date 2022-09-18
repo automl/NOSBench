@@ -26,7 +26,9 @@ class TestOptimum(unittest.TestCase):
         torch.testing.assert_close(ground_truth, loss)
 
     def test_adamw(self):
-        ground_truth = self.train(torch.optim.AdamW, lr=0.01, betas=(0.9, 0.999), weight_decay=1e-2)
+        ground_truth = self.train(
+            torch.optim.AdamW, lr=0.01, betas=(0.9, 0.999), weight_decay=1e-2
+        )
         loss = self.train(create_optimizer(AdamW), lr=0.01)
         torch.testing.assert_close(ground_truth, loss)
 

@@ -4,29 +4,22 @@ import torch
 import numpy as np
 
 from noslib.program import Program, Instruction, Pointer, READONLY_REGION, MAX_MEMORY
-from noslib.function import (
-    UnaryFunction,
-    BinaryFunction,
-    DMABinaryFunction,
-    DMAUnaryFunction,
-)
-from noslib.function import interpolate1, interpolate2, bias_correct1, bias_correct2
+from noslib.function import Function
+from noslib.function import interpolate, bias_correct
 from noslib.optimizers import AdamW
 
 
 OPS = [
-    BinaryFunction(torch.div),
-    BinaryFunction(torch.mul),
-    BinaryFunction(torch.add),
-    BinaryFunction(torch.sub),
-    UnaryFunction(torch.square),
-    UnaryFunction(torch.exp),
-    UnaryFunction(torch.sign),
-    UnaryFunction(torch.sqrt),
-    DMABinaryFunction(interpolate1),
-    DMABinaryFunction(interpolate2),
-    DMAUnaryFunction(bias_correct1),
-    DMAUnaryFunction(bias_correct2),
+    Function(torch.div, 2),
+    Function(torch.mul, 2),
+    Function(torch.add, 2),
+    Function(torch.sub, 2),
+    Function(torch.square, 1),
+    Function(torch.exp, 1),
+    Function(torch.sign, 1),
+    Function(torch.sqrt, 1),
+    Function(interpolate, 3),
+    Function(bias_correct, 3),
 ]
 
 _op_dict = {str(op): op for op in OPS}
@@ -73,12 +66,15 @@ class NOSLib:
 
     @staticmethod
     def configspace(min_sloc=1, max_sloc=10, seed=None, default_program=AdamW):
+        # TODO Needs update
         import ConfigSpace as cs
         import ConfigSpace.hyperparameters as csh
 
         configuration_space = cs.ConfigurationSpace(seed=seed)
         sloc_default = len(default_program) if len(default_program) > 0 else None
-        sloc = csh.UniformIntegerHyperparameter("sloc", lower=min_sloc, upper=max_sloc, default_value=sloc_default)
+        sloc = csh.UniformIntegerHyperparameter(
+            "sloc", lower=min_sloc, upper=max_sloc, default_value=sloc_default
+        )
         configuration_space.add_hyperparameter(sloc)
         for idx, i in enumerate(range(min_sloc, max_sloc + 1)):
             op_default = None
@@ -92,13 +88,19 @@ class NOSLib:
                 if isinstance(instruction.op, BinaryFunction):
                     in2_default = instruction.in2
                 out_default = instruction.out
-            op = csh.CategoricalHyperparameter(f"op_{idx}", choices=[str(op) for op in OPS], default_value=op_default)
+            op = csh.CategoricalHyperparameter(
+                f"op_{idx}", choices=[str(op) for op in OPS], default_value=op_default
+            )
             lt = cs.GreaterThanCondition(op, sloc, i)
             eq = cs.EqualsCondition(op, sloc, i)
             configuration_space.add_hyperparameter(op)
             configuration_space.add_condition(cs.OrConjunction(lt, eq))
-            in1 = csh.UniformIntegerHyperparameter(f"in1_{idx}", lower=0, upper=MAX_MEMORY, default_value=in1_default)
-            in2 = csh.UniformIntegerHyperparameter(f"in2_{idx}", lower=0, upper=MAX_MEMORY, default_value=in2_default)
+            in1 = csh.UniformIntegerHyperparameter(
+                f"in1_{idx}", lower=0, upper=MAX_MEMORY, default_value=in1_default
+            )
+            in2 = csh.UniformIntegerHyperparameter(
+                f"in2_{idx}", lower=0, upper=MAX_MEMORY, default_value=in2_default
+            )
             out = csh.UniformIntegerHyperparameter(
                 f"out_{idx}",
                 lower=READONLY_REGION + 1,
@@ -116,7 +118,9 @@ class NOSLib:
             lt = cs.GreaterThanCondition(in2, sloc, i)
             eq = cs.EqualsCondition(in2, sloc, i)
             cond = cs.OrConjunction(lt, eq)
-            configuration_space.add_condition(cs.AndConjunction(cond, cs.InCondition(in2, op, binary_ops)))
+            configuration_space.add_condition(
+                cs.AndConjunction(cond, cs.InCondition(in2, op, binary_ops))
+            )
         return configuration_space
 
     @staticmethod
