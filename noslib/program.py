@@ -8,7 +8,7 @@ import torch
 Pointer = NewType("Pointer", int)
 
 
-READONLY_REGION = 6
+READONLY_REGION = 8
 MAX_MEMORY = 20
 
 
@@ -98,20 +98,19 @@ def create_optimizer(program, default_lr=1e-3):
                         state = self.state[p]
                         if len(state) == 0:
                             # Initialize vector memory
-                            beta1 = torch.tensor(0.9)
-                            beta2 = torch.tensor(0.999)
-                            eps = torch.tensor(1e-8)
-                            weight_decay = torch.tensor(1e-2)
                             state["step"] = torch.tensor(0.0)
+
                             self.memory[p] = _TensorMemory(
                                 [
                                     p,
                                     p.grad,
                                     state["step"],
-                                    beta1,
-                                    beta2,
-                                    weight_decay,
-                                    eps,
+                                    torch.tensor(1.0),
+                                    torch.tensor(0.5),
+                                    torch.tensor(1e-01),
+                                    torch.tensor(1e-02),
+                                    torch.tensor(1e-03),
+                                    torch.tensor(1e-06),
                                 ]
                             )
 
