@@ -1,17 +1,15 @@
-import pathlib
-
 import torch
-from torch import nn
-import numpy as np
 import sklearn.datasets
 
-from noslib.program import Program, Instruction, Pointer, READONLY_REGION, MAX_MEMORY
-from noslib.function import Function
-from noslib.function import interpolate, bias_correct
-from noslib.optimizers import AdamW
-from noslib.pipeline import MLPClassificationPipeline, ScikitLearnDataset
+from nosbench.noslib import NOSLib
+from nosbench.optimizers import AdamW
+from nosbench.pipeline import MLPClassificationPipeline, ScikitLearnDataset
+from nosbench.function import interpolate, bias_correct
+from nosbench.function import Function
+from nosbench.program import Program, Instruction, Pointer, READONLY_REGION
 
 
+MAX_MEMORY = 20
 OPS = [
     Function(torch.div, 2),
     Function(torch.mul, 2),
@@ -28,41 +26,14 @@ OPS = [
 _op_dict = {str(op): op for op in OPS}
 
 
-def initial_state(program):
-    return {
-        "program": program,
-        "training_losses": [],
-        "validation_losses": [],
-        "test_losses": [],
-        "torch_state": None,
-        "cost": 0,
-    }
-
-
-class NOSLib:
+class NOSBench(NOSLib):
     def __init__(self, path="cache"):
-        self.path = pathlib.Path(path)
-        self.path.mkdir(parents=True, exist_ok=True)
-        self._exists = set()
-        for run in self.path.glob("*.run"):
-            self._exists.add(int(run.stem))
         iris = sklearn.datasets.load_iris()
         dataset = ScikitLearnDataset(iris)
-        self.pipeline = MLPClassificationPipeline(
+        pipeline = MLPClassificationPipeline(
             dataset=dataset, hidden_layers=[16], optimizer_kwargs={"lr": 0.0001}
         )
-
-    def query(self, program, epochs):
-        stem = hash(program)
-        if stem in self._exists:
-            state_dict = torch.load((self.path / str(stem)).with_suffix(".run"))
-        else:
-            state_dict = initial_state(program)
-        if epochs > len(state_dict["training_losses"]):
-            state_dict = self.pipeline.query(state_dict, epochs)
-            torch.save(state_dict, (self.path / str(stem)).with_suffix(".run"))
-            self._exists.add(stem)
-        return state_dict
+        super().__init__(pipeline=pipeline, path=path)
 
     @staticmethod
     def configspace(min_sloc=1, max_sloc=10, seed=None, default_program=AdamW):

@@ -1,7 +1,7 @@
 import torch
 
-from noslib.program import Program, Instruction, Pointer, READONLY_REGION
-from noslib.function import interpolate, bias_correct, Function
+from nosbench.program import Program, Instruction, Pointer, READONLY_REGION
+from nosbench.function import interpolate, bias_correct, Function
 
 
 # Rename memory locations for easier reading

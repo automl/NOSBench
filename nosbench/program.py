@@ -9,13 +9,12 @@ Pointer = NewType("Pointer", int)
 
 
 READONLY_REGION = 8
-MAX_MEMORY = 20
 
 
 class Program(list):
     @staticmethod
     def _sphere(data):
-        return torch.sum(data ** 2)
+        return torch.sum(data**2)
 
     def __eq__(self, other):
         return hash(self) == hash(other)

@@ -4,15 +4,14 @@ from collections import namedtuple
 import copy
 import pprint
 
-from noslib.program import (
+from nosbench.program import (
     Instruction,
     Pointer,
     bruteforce_optimize,
     READONLY_REGION,
-    MAX_MEMORY,
 )
-from noslib.noslib import NOSLib, OPS
-from noslib.optimizers import AdamW, SGD
+from nosbench.nosbench import NOSBench, OPS, MAX_MEMORY
+from nosbench.optimizers import AdamW, SGD
 
 
 import numpy as np
@@ -75,12 +74,12 @@ class RE_NOS(RegularizedEvolution):
         rng=np.random.RandomState(),
         **kwargs,
     ):
-        self.noslib = NOSLib()
+        self.benchmark = NOSBench()
         self.initial_program = initial_program
         super().__init__(population_size, tournament_size, rng, **kwargs)
 
     def evaluate_element(self, element, **kwargs):
-        state_dict = self.noslib.query(element, 10)
+        state_dict = self.benchmark.query(element, 10)
         idx = np.argmin(state_dict["validation_losses"])
         return -state_dict["test_losses"][idx]
 
