@@ -1,5 +1,5 @@
 import copy
-from typing import Callable, NewType, Optional, Type, List
+from typing import Callable, NewType, Type, List
 from dataclasses import dataclass
 
 import torch

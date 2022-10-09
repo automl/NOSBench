@@ -2,8 +2,8 @@ import unittest
 
 import torch
 
-from noslib.program import create_optimizer
-from noslib.optimizers import SGD, AdamW, Adam, RMSprop, Adagrad
+from nosbench.program import create_optimizer
+from nosbench.optimizers import SGD, AdamW, Adam, RMSprop, Adagrad
 
 
 class TestOptimum(unittest.TestCase):
