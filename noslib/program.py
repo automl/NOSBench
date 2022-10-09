@@ -14,28 +14,31 @@ MAX_MEMORY = 20
 
 class Program(list):
     @staticmethod
-    def _rosenbrock(data):
-        return torch.sum(100 * (data[1:] - data[:-1] ** 2) ** 2 + (1 - data[:-1]) ** 2)
+    def _sphere(data):
+        return torch.sum(data ** 2)
 
     def __eq__(self, other):
         return hash(self) == hash(other)
 
     def __hash__(self):
-        params = torch.nn.Parameter(-torch.ones(32))
-        optimizer_class = self.optimizer(default_lr=0.0001)
+        generator = torch.Generator().manual_seed(42)
+        data = torch.randn(100, generator=generator)
+        params = torch.nn.Parameter(data)
+        optimizer_class = self.optimizer(default_lr=0.1)
         optim = optimizer_class([params])
-        output_string = ""
-        for _ in range(50):
-            output = self._rosenbrock(params)
-            optim.zero_grad()
-            output.backward()
-            optim.step()
-            if torch.isnan(output):
-                return -2
-            if torch.isinf(output):
-                return -3
-            output_string += f"{output:.5f}".replace(".", "")
-        return int(output_string.replace("0", "")[-18:])
+
+        output = self._sphere(params)
+        optim.zero_grad()
+        output.backward()
+        optim.step()
+        output = self._sphere(params)
+
+        if torch.isnan(output):
+            return -2
+        if torch.isinf(output):
+            return -3
+        output_string = f"{output:.17f}".replace(".", "")
+        return int(output_string[:18])
 
     def optimizer(self, default_lr=1e-3) -> Type[torch.optim.Optimizer]:
         return create_optimizer(self, default_lr)
