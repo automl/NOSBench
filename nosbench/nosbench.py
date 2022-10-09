@@ -1,5 +1,6 @@
 import torch
 import sklearn.datasets
+from torch.utils.data import random_split
 
 from nosbench.noslib import NOSLib
 from nosbench.optimizers import AdamW
@@ -27,11 +28,38 @@ _op_dict = {str(op): op for op in OPS}
 
 
 class NOSBench(NOSLib):
-    def __init__(self, path="cache"):
+    def __init__(
+        self,
+        path="cache",
+        save_program: bool = True,
+        save_training_losses: bool = True,
+        save_validation_losses: bool = True,
+        save_test_losses: bool = True,
+        save_torch_state: bool = True,
+        save_costs: bool = True,
+    ):
         iris = sklearn.datasets.load_iris()
         dataset = ScikitLearnDataset(iris)
+        split = [int(s * len(dataset)) for s in [0.8, 0.1, 0.1]]
+        generator = torch.Generator().manual_seed(42)
+        train, val, test = random_split(dataset, split, generator=generator)
+        input_size = len(dataset.feature_names)
+        output_size = len(dataset.target_names)
         pipeline = MLPClassificationPipeline(
-            dataset=dataset, hidden_layers=[16], optimizer_kwargs={"lr": 0.0001}
+            train=train,
+            val=val,
+            test=test,
+            batch_size=-1,
+            input_size=input_size,
+            hidden_layers=[16],
+            output_size=output_size,
+            optimizer_kwargs={"lr": 0.0001},
+            save_program=save_program,
+            save_training_losses=save_training_losses,
+            save_validation_losses=save_validation_losses,
+            save_test_losses=save_test_losses,
+            save_torch_state=save_torch_state,
+            save_costs=save_costs,
         )
         super().__init__(pipeline=pipeline, path=path)
 

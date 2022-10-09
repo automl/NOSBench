@@ -10,9 +10,15 @@ def initial_state(program):
         "validation_losses": [],
         "test_losses": [],
         "torch_state": None,
-        "cost": 0,
+        "costs": [],
         "epoch": 0,
     }
+
+
+def _default_getitem(l, idx, default=None):
+    if idx >= len(l):
+        return default
+    return l[idx]
 
 
 class NOSLib:
@@ -24,14 +30,21 @@ class NOSLib:
             self._exists.add(int(run.stem))
         self.pipeline = pipeline
 
-    def query(self, program, epochs):
+    def query(self, program, epoch, return_state=False):
         stem = hash(program)
         if stem in self._exists:
             state_dict = torch.load((self.path / str(stem)).with_suffix(".run"))
         else:
             state_dict = initial_state(program)
-        if epochs > state_dict["epoch"]:
-            state_dict = self.pipeline.query(state_dict, epochs)
+        if epoch > state_dict["epoch"]:
+            state_dict = self.pipeline.query(state_dict, epoch)
             torch.save(state_dict, (self.path / str(stem)).with_suffix(".run"))
             self._exists.add(stem)
-        return state_dict
+
+        return {
+            "minibatch_losses": _default_getitem(state_dict["training_losses"], epoch),
+            "validation_loss": _default_getitem(state_dict["validation_losses"], epoch),
+            "test_loss": _default_getitem(state_dict["test_losses"], epoch),
+            "cost": _default_getitem(state_dict["costs"], epoch),
+            "state": state_dict if return_state else {},
+        }

@@ -5,7 +5,7 @@ from abc import abstractmethod
 
 import torch
 from torch import nn
-from torch.utils.data import Dataset, random_split
+from torch.utils.data import Dataset, DataLoader
 
 
 class ScikitLearnDataset(Dataset):
@@ -22,17 +22,37 @@ class ScikitLearnDataset(Dataset):
         return len(self.target)
 
 
-@dataclass
 class Pipeline:
-    save_program: bool = True
-    save_training_losses: bool = True
-    save_validation_losses: bool = True
-    save_test_losses: bool = True
-    save_torch_state: bool = True
+    def __init__(
+        self,
+        train,
+        val,
+        test,
+        batch_size,
+        optimizer_kwargs={"lr": 0.0001},
+        save_program: bool = True,
+        save_training_losses: bool = True,
+        save_validation_losses: bool = True,
+        save_test_losses: bool = True,
+        save_torch_state: bool = True,
+        save_costs: bool = True,
+    ):
+        self.train = train
+        self.val = train
+        self.test = train
+        self.loader = DataLoader(
+            train, batch_size=batch_size if batch_size > 0 else len(train)
+        )
+        self.save_program = save_program
+        self.save_training_losses = save_training_losses
+        self.save_validation_losses = save_validation_losses
+        self.save_test_losses = save_test_losses
+        self.save_torch_state = save_torch_state
+        self.save_costs = save_costs
+        self.optimizer_kwargs = optimizer_kwargs
 
     def query(self, state_dict, epochs):
         torch.manual_seed(42)
-        train, val, test = self.dataset
         model = self.create_model()
         program = state_dict["program"]
         optimizer_class = program.optimizer()
@@ -43,23 +63,30 @@ class Pipeline:
         training_losses = state_dict["training_losses"]
         validation_losses = state_dict["validation_losses"]
         test_losses = state_dict["test_losses"]
-        total_cost = state_dict["cost"]
-        for epoch in range(state_dict["epoch"], epochs):
+        costs = state_dict["costs"]
+        total_cost = costs[-1] if state_dict["epoch"] > 0 else 0
+        for epoch in range(state_dict["epoch"], epochs+1):
             prev_time = time.time()
-            data, target = train[:]
-            loss = self.eval(model, data, target, optimizer, train=True)
+            minibatch_losses = []
+            for data, target in self.loader:
+                loss = self.eval(model, data, target, optimizer, train=True)
+                if self.save_training_losses:
+                    minibatch_losses.append(loss.item())
             if self.save_training_losses:
-                training_losses.append(loss.item())
+                training_losses.append(minibatch_losses)
             total_cost += time.time() - prev_time
+            if self.save_costs:
+                costs.append(total_cost)
 
             if self.save_validation_losses:
                 with torch.no_grad():
+                    data, target = self.val[:]
                     loss = self.eval(model, data, target, optimizer, train=False)
                     validation_losses.append(loss.item())
 
             if self.save_test_losses:
                 with torch.no_grad():
-                    data, target = test[:]
+                    data, target = self.test[:]
                     loss = self.eval(model, data, target, optimizer, train=False)
                     test_losses.append(loss.item())
 
@@ -75,8 +102,8 @@ class Pipeline:
             "validation_losses": validation_losses,
             "test_losses": test_losses,
             "torch_state": torch_state,
-            "cost": total_cost,
-            "epoch": epoch + 1,
+            "costs": costs,
+            "epoch": epoch,
         }
 
     @staticmethod
@@ -91,22 +118,9 @@ class Pipeline:
 
 
 class MLPClassificationPipeline(Pipeline):
-    def __init__(
-        self,
-        dataset,
-        hidden_layers,
-        split=[0.8, 0.1, 0.1],
-        optimizer_kwargs={"lr": 0.0001},
-        **kwargs
-    ):
-        super().__init__(**kwargs)
-        split = [int(s * len(dataset)) for s in split]
-        generator = torch.Generator().manual_seed(42)
-        self.dataset = random_split(dataset, split, generator=generator)
-        input_size = len(dataset.feature_names)
-        output_size = len(dataset.target_names)
+    def __init__(self, input_size, hidden_layers, output_size, **kwargs):
         self.layers = [input_size, *hidden_layers, output_size]
-        self.optimizer_kwargs = optimizer_kwargs
+        super().__init__(**kwargs)
 
     def create_model(self):
         module_list = []

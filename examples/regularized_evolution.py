@@ -79,9 +79,8 @@ class RE_NOS(RegularizedEvolution):
         super().__init__(population_size, tournament_size, rng, **kwargs)
 
     def evaluate_element(self, element, **kwargs):
-        state_dict = self.benchmark.query(element, 10)
-        idx = np.argmin(state_dict["validation_losses"])
-        return -state_dict["test_losses"][idx]
+        result = self.benchmark.query(element, 10)
+        return -result["validation_loss"]
 
     def random_element(self, rng, **kwargs):
         return copy.deepcopy(self.initial_program)
