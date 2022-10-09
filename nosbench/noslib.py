@@ -11,6 +11,7 @@ def initial_state(program):
         "test_losses": [],
         "torch_state": None,
         "cost": 0,
+        "epoch": 0,
     }
 
 
@@ -29,7 +30,7 @@ class NOSLib:
             state_dict = torch.load((self.path / str(stem)).with_suffix(".run"))
         else:
             state_dict = initial_state(program)
-        if epochs > len(state_dict["training_losses"]):
+        if epochs > state_dict["epoch"]:
             state_dict = self.pipeline.query(state_dict, epochs)
             torch.save(state_dict, (self.path / str(stem)).with_suffix(".run"))
             self._exists.add(stem)
