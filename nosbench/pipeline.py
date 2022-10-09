@@ -51,7 +51,7 @@ class Pipeline:
         self.save_costs = save_costs
         self.optimizer_kwargs = optimizer_kwargs
 
-    def query(self, state_dict, epochs):
+    def query(self, state_dict, n_epochs):
         torch.manual_seed(42)
         model = self.create_model()
         program = state_dict["program"]
@@ -64,8 +64,8 @@ class Pipeline:
         validation_losses = state_dict["validation_losses"]
         test_losses = state_dict["test_losses"]
         costs = state_dict["costs"]
-        total_cost = costs[-1] if state_dict["epoch"] > 0 else 0
-        for epoch in range(state_dict["epoch"], epochs+1):
+        total_cost = costs[-1] if state_dict["n_epochs"] > 0 else 0
+        for epoch in range(state_dict["n_epochs"], n_epochs):
             prev_time = time.time()
             minibatch_losses = []
             for data, target in self.loader:
@@ -92,10 +92,11 @@ class Pipeline:
 
         if self.save_torch_state:
             torch_state = {
-                "model": copy.deepcopy(model.state_dict()),
-                "optimizer": copy.deepcopy(optimizer.state_dict()),
+                "model": model.state_dict(),
+                "optimizer": optimizer.state_dict(),
             }
 
+        state_dict["n_epochs"] = n_epochs
         return {
             "program": program,
             "training_losses": training_losses,
@@ -103,7 +104,7 @@ class Pipeline:
             "test_losses": test_losses,
             "torch_state": torch_state,
             "costs": costs,
-            "epoch": epoch,
+            "n_epochs": n_epochs,
         }
 
     @staticmethod
