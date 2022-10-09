@@ -4,12 +4,12 @@ import torch
 from torch import nn
 import numpy as np
 import sklearn.datasets
-from sklearn.model_selection import KFold
 
 from noslib.program import Program, Instruction, Pointer, READONLY_REGION, MAX_MEMORY
 from noslib.function import Function
 from noslib.function import interpolate, bias_correct
 from noslib.optimizers import AdamW
+from noslib.pipeline import MLPClassificationPipeline, ScikitLearnDataset
 
 
 OPS = [
@@ -28,75 +28,15 @@ OPS = [
 _op_dict = {str(op): op for op in OPS}
 
 
-class ScikitLearnDataset(torch.utils.data.Dataset):
-    def __init__(self, dataset):
-        self.data = torch.from_numpy(dataset.data).float()
-        self.target = torch.from_numpy(dataset.target).long()
-
-    def __getitem__(self, i):
-        return self.data[i], self.target[i]
-
-    def __len__(self):
-        return len(self.target)
-
-
-def classification_mlp_model(layers):
-    module_list = []
-    prev_layer = layers[0]
-    for layer in layers[1:-1]:
-        module_list.append(nn.Linear(prev_layer, layer))
-        module_list.append(nn.ReLU())
-        prev_layer = layer
-    module_list.append(nn.Linear(prev_layer, layers[-1]))
-    module_list.append(nn.LogSoftmax(-1))
-    return nn.Sequential(*module_list)
-
-
-class IrisClassificationPipeline:
-    def __init__(
-        self,
-        hidden_layers,
-        k_folds=5,
-        epochs=1,
-        batch_size=-1,
-        optimizer_kwargs={"lr": 0.0001},
-    ):
-        self.iris = sklearn.datasets.load_iris()
-        input_size = len(self.iris.feature_names)
-        output_size = len(self.iris.target_names)
-        self.layers = [input_size, *hidden_layers, output_size]
-        self.optimizer_kwargs = optimizer_kwargs
-        self.epochs = epochs
-        self.k_folds = k_folds
-        self.batch_size = batch_size
-
-    def query(self, optimizer_class):
-        dataset = ScikitLearnDataset(self.iris)
-        kfold = KFold(n_splits=self.k_folds)
-
-        losses = []
-        for train_index, test_index in kfold.split(dataset):
-            torch.manual_seed(42)
-            loader = torch.utils.data.DataLoader(
-                dataset,
-                batch_size=len(train_index) if self.batch_size == -1 else self.batch_size,
-                sampler=torch.utils.data.SubsetRandomSampler(train_index),
-            )
-            model = classification_mlp_model(self.layers)
-            optimizer = optimizer_class(model.parameters(), **self.optimizer_kwargs)
-            for epoch in range(self.epochs):
-                for data, target in loader:
-                    output = model(data)
-                    loss = nn.functional.nll_loss(output, target)
-                    optimizer.zero_grad()
-                    loss.backward()
-                    optimizer.step()
-            with torch.no_grad():
-                data, target = dataset[test_index]
-                output = model(data)
-                loss = nn.functional.nll_loss(output, target)
-                losses.append(loss.item())
-        return np.mean(losses)
+def initial_state(program):
+    return {
+        "program": program,
+        "training_losses": [],
+        "validation_losses": [],
+        "test_losses": [],
+        "torch_state": None,
+        "cost": 0,
+    }
 
 
 class NOSLib:
@@ -106,18 +46,23 @@ class NOSLib:
         self._exists = set()
         for run in self.path.glob("*.run"):
             self._exists.add(int(run.stem))
-        self.pipeline = IrisClassificationPipeline([16], k_folds=5, epochs=100, batch_size=-1, optimizer_kwargs={'lr': 0.0001})
+        iris = sklearn.datasets.load_iris()
+        dataset = ScikitLearnDataset(iris)
+        self.pipeline = MLPClassificationPipeline(
+            dataset=dataset, hidden_layers=[16], optimizer_kwargs={"lr": 0.0001}
+        )
 
-    def query(self, program):
+    def query(self, program, epochs):
         stem = hash(program)
         if stem in self._exists:
-            return np.load((self.path / str(stem)).with_suffix(".run"))
-        optimizer_class = program.optimizer()
-        loss = self.pipeline.query(optimizer_class)
-        with open((self.path / str(stem)).with_suffix(".run"), "wb") as f:
-            np.save(f, loss)
+            state_dict = torch.load((self.path / str(stem)).with_suffix(".run"))
+        else:
+            state_dict = initial_state(program)
+        if epochs > len(state_dict["training_losses"]):
+            state_dict = self.pipeline.query(state_dict, epochs)
+            torch.save(state_dict, (self.path / str(stem)).with_suffix(".run"))
             self._exists.add(stem)
-        return loss
+        return state_dict
 
     @staticmethod
     def configspace(min_sloc=1, max_sloc=10, seed=None, default_program=AdamW):

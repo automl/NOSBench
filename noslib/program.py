@@ -83,7 +83,6 @@ def create_optimizer(program, default_lr=1e-3):
     class Optimizer(torch.optim.Optimizer):
         def __init__(self, params, lr=default_lr):
             defaults = dict(lr=lr)
-            self.memory = {}
             super(Optimizer, self).__init__(params, defaults)
 
         @torch.no_grad()
@@ -99,8 +98,7 @@ def create_optimizer(program, default_lr=1e-3):
                         if len(state) == 0:
                             # Initialize vector memory
                             state["step"] = torch.tensor(0.0)
-
-                            self.memory[p] = _TensorMemory(
+                            state["memory"] = _TensorMemory(
                                 [
                                     p,
                                     p.grad,
@@ -121,7 +119,7 @@ def create_optimizer(program, default_lr=1e-3):
                         # Execute the program
                         for instruction in program:
                             assert instruction.output > READONLY_REGION
-                            d_p = instruction.execute(self.memory[p])
+                            d_p = instruction.execute(state["memory"])
 
                         # Update weights
                         p.add_(d_p, alpha=-self.defaults["lr"])
