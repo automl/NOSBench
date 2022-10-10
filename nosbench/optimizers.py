@@ -76,3 +76,16 @@ Adagrad = Program(
         Instruction(Function(torch.div, 2), [g, v_sqrt], update),
     ]
 )
+
+HeroLion = Program(
+    [
+        Instruction(Function(torch.sub, 2), [Pointer(3), Pointer(5)], beta1),
+        Instruction(Function(torch.sub, 2), [Pointer(3), Pointer(7)], beta2),
+        Instruction(Function(interpolate, 3), [m, g, beta2], m),
+        Instruction(Function(bias_correct, 3), [m, beta2, step], m_hat),
+        Instruction(Function(interpolate, 3), [m_hat, g, beta1], m_hat),
+        Instruction(Function(torch.sign, 1), [m_hat], update),
+        Instruction(Function(torch.mul, 2), [w, weight_decay], wd),
+        Instruction(Function(torch.add, 2), [update, wd], update),
+    ]
+)
