@@ -53,7 +53,7 @@ class NOSBench(NOSLib):
             input_size=input_size,
             hidden_layers=[16],
             output_size=output_size,
-            optimizer_kwargs={"lr": 0.0001},
+            optimizer_kwargs={"lr": 0.001318},
             save_program=save_program,
             save_training_losses=save_training_losses,
             save_validation_losses=save_validation_losses,
