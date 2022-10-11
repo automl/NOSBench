@@ -128,7 +128,7 @@ MUTATIONS = [
 
 
 if __name__ == "__main__":
-    re = RE_NOS(100, 25, rng=np.random.RandomState(123), initial_program=SGD)
+    re = RE_NOS(100, 25, rng=np.random.RandomState(123), initial_program=AdamW)
     for i in range(20000):
         x = max(re.history, key=lambda x: x.fitness)
         print(f"Step: {i+1}, Fitness: {x.fitness}")
@@ -137,4 +137,7 @@ if __name__ == "__main__":
         re.step()
 
     x = max(re.history, key=lambda x: x.fitness)
+    print("Incumbent optimizer:")
+    pprint.pprint(x.cls)
+    print("Pruned optimizer:")
     pprint.pprint(bruteforce_optimize(x.cls))

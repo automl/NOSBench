@@ -29,7 +29,6 @@ class Pipeline:
         val,
         test,
         batch_size,
-        optimizer_kwargs={"lr": 0.0001},
         save_program: bool = True,
         save_training_losses: bool = True,
         save_validation_losses: bool = True,
@@ -49,14 +48,13 @@ class Pipeline:
         self.save_test_losses = save_test_losses
         self.save_torch_state = save_torch_state
         self.save_costs = save_costs
-        self.optimizer_kwargs = optimizer_kwargs
 
     def query(self, state_dict, n_epochs):
         torch.manual_seed(42)
         model = self.create_model()
         program = state_dict["program"]
         optimizer_class = program.optimizer()
-        optimizer = optimizer_class(model.parameters(), **self.optimizer_kwargs)
+        optimizer = optimizer_class(model.parameters())
         if state_dict["torch_state"] is not None:
             model.load_state_dict(state_dict["torch_state"]["model"])
             optimizer.load_state_dict(state_dict["torch_state"]["optimizer"])

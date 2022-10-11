@@ -40,28 +40,49 @@ AdamW = Program(
         Instruction(Function(torch.div, 2), [m_hat, v_hat_sqrt], update),
         Instruction(Function(torch.mul, 2), [w, weight_decay], wd),
         Instruction(Function(torch.add, 2), [update, wd], update),
+        Instruction(Function(torch.mul, 2), [update, Pointer(7)], update),
     ]
 )
 
-Adam = Program(AdamW[:-2])
+
+Adam = Program(
+    [
+        Instruction(Function(torch.square, 1), [g], g_square),
+        Instruction(Function(torch.sub, 2), [Pointer(3), Pointer(5)], beta1),
+        Instruction(Function(torch.sub, 2), [Pointer(3), Pointer(7)], beta2),
+        Instruction(Function(interpolate, 3), [m, g, beta1], m),
+        Instruction(Function(interpolate, 3), [v, g_square, beta2], v),
+        Instruction(Function(bias_correct, 3), [m, beta1, step], m_hat),
+        Instruction(Function(bias_correct, 3), [v, beta2, step], v_hat),
+        Instruction(Function(torch.mul, 2), [Pointer(6), Pointer(8)], eps),
+        Instruction(Function(torch.sqrt, 1), [v_hat], v_hat_sqrt),
+        Instruction(Function(torch.add, 2), [v_hat_sqrt, eps], v_hat_sqrt),
+        Instruction(Function(torch.div, 2), [m_hat, v_hat_sqrt], update),
+        Instruction(Function(torch.mul, 2), [update, Pointer(7)], update),
+    ]
+)
+
 
 SGD = Program(
     [
-        Instruction(Function(torch.sub, 2), [Pointer(3), Pointer(5)], momentum),
+        Instruction(Function(torch.sub, 2), [Pointer(5), Pointer(5)], momentum),
         Instruction(Function(torch.mul, 2), [m, momentum], m),
         Instruction(Function(torch.add, 2), [g, m], m),
+        Instruction(Function(torch.mul, 2), [m, Pointer(6)], update),
     ]
 )
 
+
 RMSprop = Program(
     [
-        Instruction(Function(torch.sub, 2), [Pointer(3), Pointer(7)], alpha),
+        Instruction(Function(torch.sub, 2), [Pointer(3), Pointer(6)], alpha),
         Instruction(Function(torch.square, 1), [g], g_square),
         Instruction(Function(interpolate, 3), [v, g_square, alpha], v),
         Instruction(Function(torch.mul, 2), [Pointer(6), Pointer(8)], eps),
         Instruction(Function(torch.sqrt, 1), [v], v_sqrt),
         Instruction(Function(torch.add, 2), [v_sqrt, eps], v_sqrt),
         Instruction(Function(torch.div, 2), [g, v_sqrt], update),
+        Instruction(Function(torch.mul, 2), [update, Pointer(6)], update),
     ]
 )
 
@@ -74,8 +95,10 @@ Adagrad = Program(
         Instruction(Function(torch.mul, 2), [Pointer(6), Pointer(8)], eps),
         Instruction(Function(torch.add, 2), [v_sqrt, eps], v_sqrt),
         Instruction(Function(torch.div, 2), [g, v_sqrt], update),
+        Instruction(Function(torch.mul, 2), [update, Pointer(6)], update),
     ]
 )
+
 
 HeroLion = Program(
     [
@@ -87,5 +110,6 @@ HeroLion = Program(
         Instruction(Function(torch.sign, 1), [m_hat], update),
         Instruction(Function(torch.mul, 2), [w, weight_decay], wd),
         Instruction(Function(torch.add, 2), [update, wd], update),
+        Instruction(Function(torch.mul, 2), [update, Pointer(7)], update),
     ]
 )

@@ -17,6 +17,10 @@ class Program(list):
     def _sphere(data):
         return torch.sum(data**2)
 
+    @staticmethod
+    def _rosenbrock(data):
+        return torch.sum(100 * (data[1:] - data[:-1] ** 2) ** 2 + (1 - data[:-1]) ** 2)
+
     def __eq__(self, other):
         return hash(self) == hash(other)
 
@@ -24,24 +28,26 @@ class Program(list):
         generator = torch.Generator().manual_seed(42)
         data = torch.randn(100, generator=generator)
         params = torch.nn.Parameter(data)
-        optimizer_class = self.optimizer(default_lr=0.1)
+        optimizer_class = self.optimizer()
         optim = optimizer_class([params])
 
+        output_string = ""
         output = self._sphere(params)
-        optim.zero_grad()
-        output.backward()
-        optim.step()
-        output = self._sphere(params)
+        for _ in range(5):
+            optim.zero_grad()
+            output.backward()
+            optim.step()
+            output = self._sphere(params)
 
-        if torch.isnan(output):
-            return -2
-        if torch.isinf(output):
-            return -3
-        output_string = f"{output:.17f}".replace(".", "")
-        return int(output_string[:18])
+            if torch.isnan(output):
+                return -2
+            if torch.isinf(output):
+                return -3
+            output_string += f"{output:.5f}".replace(".", "")
+        return int(output_string.replace("0", "")[-16:])
 
-    def optimizer(self, default_lr=1e-3) -> Type[torch.optim.Optimizer]:
-        return create_optimizer(self, default_lr)
+    def optimizer(self) -> Type[torch.optim.Optimizer]:
+        return create_optimizer(self)
 
 
 @dataclass
@@ -57,7 +63,7 @@ class Instruction:
         return output
 
     def __str__(self):
-        return f"{self.op}(inputs={self.inputs}, output={self.output})"
+        return f"Instruction(Function({self.op}, {self.op.n_args}), inputs={self.inputs}, output={self.output})"
 
     def __repr__(self):
         return str(self)
@@ -89,13 +95,12 @@ class _TensorMemory(list):
             self[idx] = value
 
 
-# TODO: Detect use of other hyperparameters and include in the constructor
-def create_optimizer(program, default_lr=1e-3):
+def create_optimizer(program):
     class Optimizer(torch.optim.Optimizer):
-        def __init__(self, params, lr=default_lr):
-            defaults = dict(lr=lr)
+        def __init__(self, params):
+            # Hyperparameters of the optimizer are part of the program
             self.memory = {}
-            super(Optimizer, self).__init__(params, defaults)
+            super(Optimizer, self).__init__(params, {})
 
         def load_state_dict(self, state_dict):
             super().load_state_dict(state_dict)
@@ -144,7 +149,7 @@ def create_optimizer(program, default_lr=1e-3):
                             d_p = instruction.execute(self.memory[p])
 
                         # Update weights
-                        p.add_(d_p, alpha=-self.defaults["lr"])
+                        p.add_(-d_p)
             return loss
 
     return Optimizer

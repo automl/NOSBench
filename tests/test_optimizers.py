@@ -9,11 +9,10 @@ from nosbench.optimizers import SGD, AdamW, Adam, RMSprop, Adagrad
 class TestOptimum(unittest.TestCase):
     def train(self, optimizer_class, **kwargs):
         torch.manual_seed(123)
-        model = torch.nn.Linear(1, 1)
-        optim = optimizer_class(model.parameters(), **kwargs)
-        for _ in range(1000):
-            output = model(torch.tensor([1.0]))
-            loss = torch.nn.functional.mse_loss(output, torch.tensor([1.0]))
+        param = torch.nn.Parameter(torch.tensor([1.0]))
+        optim = optimizer_class([param], **kwargs)
+        for _ in range(3):
+            loss = torch.nn.functional.mse_loss(param, torch.tensor([0.0]))
             optim.zero_grad()
             loss.backward()
             optim.step()
@@ -21,28 +20,26 @@ class TestOptimum(unittest.TestCase):
         return loss
 
     def test_sgd(self):
-        ground_truth = self.train(torch.optim.SGD, lr=0.01, momentum=0.9)
-        loss = self.train(create_optimizer(SGD), lr=0.01)
+        ground_truth = self.train(torch.optim.SGD, lr=1e-2)
+        loss = self.train(create_optimizer(SGD))
         torch.testing.assert_close(ground_truth, loss)
 
     def test_adamw(self):
-        ground_truth = self.train(
-            torch.optim.AdamW, lr=0.01, betas=(0.9, 0.999), weight_decay=1e-2
-        )
-        loss = self.train(create_optimizer(AdamW), lr=0.01)
+        ground_truth = self.train(torch.optim.AdamW)
+        loss = self.train(create_optimizer(AdamW))
         torch.testing.assert_close(ground_truth, loss)
 
     def test_adam(self):
-        ground_truth = self.train(torch.optim.Adam, lr=0.01, betas=(0.9, 0.999))
-        loss = self.train(create_optimizer(Adam), lr=0.01)
+        ground_truth = self.train(torch.optim.Adam)
+        loss = self.train(create_optimizer(Adam))
         torch.testing.assert_close(ground_truth, loss)
 
     def test_rmsprop(self):
-        ground_truth = self.train(torch.optim.RMSprop, lr=0.01, alpha=0.999)
-        loss = self.train(create_optimizer(RMSprop), lr=0.01)
+        ground_truth = self.train(torch.optim.RMSprop)
+        loss = self.train(create_optimizer(RMSprop))
         torch.testing.assert_close(ground_truth, loss)
 
     def test_adagrad(self):
-        ground_truth = self.train(torch.optim.Adagrad, lr=0.01)
-        loss = self.train(create_optimizer(Adagrad), lr=0.01)
+        ground_truth = self.train(torch.optim.Adagrad, lr=1e-2, eps=1e-8)
+        loss = self.train(create_optimizer(Adagrad))
         torch.testing.assert_close(ground_truth, loss)
