@@ -18,6 +18,10 @@ class Function:
         return str(self.func.__name__)
 
 
+def clip(x, max):
+    return torch.clip(x, min=None, max=max)
+
+
 def interpolate(x1, x2, beta):
     return x1 * beta + x2 * (1.0 - beta)
 

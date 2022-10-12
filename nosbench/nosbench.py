@@ -1,4 +1,5 @@
 from collections import defaultdict
+from functools import partial
 
 import torch
 import sklearn.datasets
@@ -7,7 +8,7 @@ from torch.utils.data import random_split
 from nosbench.noslib import NOSLib
 from nosbench.optimizers import AdamW
 from nosbench.pipeline import MLPClassificationPipeline, ScikitLearnDataset
-from nosbench.function import interpolate, bias_correct
+from nosbench.function import interpolate, bias_correct, clip
 from nosbench.function import Function
 from nosbench.program import Program, Instruction, Pointer, READONLY_REGION
 
@@ -20,8 +21,22 @@ OPS = [
     Function(torch.sub, 2),
     Function(torch.square, 1),
     Function(torch.exp, 1),
+    Function(torch.log, 1),
     Function(torch.sign, 1),
     Function(torch.sqrt, 1),
+    Function(torch.abs, 1),
+    Function(clip, 2),
+    Function(torch.sin, 1),
+    Function(torch.cos, 1),
+    Function(torch.tan, 1),
+    Function(torch.arcsin, 1),
+    Function(torch.arccos, 1),
+    Function(torch.arctan, 1),
+    Function(torch.mean, 1),
+    Function(torch.std, 1),
+    Function(torch.minimum, 2),
+    Function(torch.maximum, 2),
+    Function(torch.heaviside, 2),
     Function(interpolate, 3),
     Function(bias_correct, 3),
 ]
@@ -69,7 +84,7 @@ class NOSBench(NOSLib):
         super().__init__(pipeline=pipeline, path=path)
 
     @staticmethod
-    def configspace(min_sloc=1, max_sloc=10, max_memory=MAX_MEMORY, seed=None):
+    def configspace(min_sloc=1, max_sloc=len(AdamW), max_memory=MAX_MEMORY, seed=None):
         import ConfigSpace as cs
         import ConfigSpace.hyperparameters as csh
 
