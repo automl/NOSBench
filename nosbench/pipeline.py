@@ -37,8 +37,8 @@ class Pipeline:
         save_costs: bool = True,
     ):
         self.train = train
-        self.val = train
-        self.test = train
+        self.val = val
+        self.test = test
         self.loader = DataLoader(
             train, batch_size=batch_size if batch_size > 0 else len(train)
         )

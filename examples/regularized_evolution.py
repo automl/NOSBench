@@ -7,7 +7,6 @@ import pprint
 from nosbench.program import (
     Instruction,
     Pointer,
-    bruteforce_optimize,
     READONLY_REGION,
 )
 from nosbench.nosbench import NOSBench, OPS, MAX_MEMORY
@@ -139,5 +138,3 @@ if __name__ == "__main__":
     x = max(re.history, key=lambda x: x.fitness)
     print("Incumbent optimizer:")
     pprint.pprint(x.cls)
-    print("Pruned optimizer:")
-    pprint.pprint(bruteforce_optimize(x.cls))

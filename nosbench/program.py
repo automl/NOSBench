@@ -38,13 +38,12 @@ class Program(list):
             output.backward()
             optim.step()
             output = self._sphere(params)
-
             if torch.isnan(output):
                 return -2
             if torch.isinf(output):
                 return -3
-            output_string += f"{output:.5f}".replace(".", "")
-        return int(output_string.replace("0", "")[-16:])
+            output_string += f"{output:.4f}"
+        return int(output_string.replace(".", "")[:16])
 
     def optimizer(self) -> Type[torch.optim.Optimizer]:
         return create_optimizer(self)
@@ -153,15 +152,3 @@ def create_optimizer(program):
             return loss
 
     return Optimizer
-
-
-def bruteforce_optimize(program):
-    i = 0
-    while i < len(program):
-        program_copy = copy.deepcopy(program)
-        program_copy.pop(i)
-        if program_copy == program:
-            program = program_copy
-        else:
-            i += 1
-    return program
