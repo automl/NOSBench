@@ -1,23 +1,23 @@
 import pprint
 from collections import namedtuple
 
-from noslib import NOSLib
-from noslib.program import bruteforce_optimize
+from nosbench import NOSBench
 
 
 _Element = namedtuple("_Element", "cls fitness")
 
 
 if __name__ == "__main__":
-    nos = NOSLib()
+    benchmark = NOSBench()
 
-    cs = nos.configspace(seed=123)
+    cs = benchmark.configspace(seed=123)
     history = []
 
     for i in range(20000):
         config = cs.sample_configuration()
-        program = nos.configuration_to_program(config)
-        fitness = -nos.query(program)
+        program = benchmark.configuration_to_program(config)
+        results = benchmark.query(program, 10)
+        fitness = -results["validation_loss"]
         history.append(_Element(program, fitness))
         x = max(history, key=lambda x: x.fitness)
         print(f"Step: {i+1}, Fitness: {x.fitness}")
@@ -25,4 +25,4 @@ if __name__ == "__main__":
             break
 
     x = max(history, key=lambda x: x.fitness)
-    pprint.pprint(bruteforce_optimize(x.cls))
+    pprint.pprint(x.cls)

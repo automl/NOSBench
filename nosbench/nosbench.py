@@ -1,3 +1,5 @@
+from collections import defaultdict
+
 import torch
 import sklearn.datasets
 from torch.utils.data import random_split
@@ -25,6 +27,10 @@ OPS = [
 ]
 
 _op_dict = {str(op): op for op in OPS}
+condition_map = defaultdict(list)
+for op in OPS:
+    for i in range(1, op.n_args + 1):
+        condition_map[i].append(str(op))
 
 
 class NOSBench(NOSLib):
@@ -63,62 +69,41 @@ class NOSBench(NOSLib):
         super().__init__(pipeline=pipeline, path=path)
 
     @staticmethod
-    def configspace(min_sloc=1, max_sloc=10, seed=None, default_program=AdamW):
-        # TODO Needs update
+    def configspace(min_sloc=1, max_sloc=10, max_memory=MAX_MEMORY, seed=None):
         import ConfigSpace as cs
         import ConfigSpace.hyperparameters as csh
 
         configuration_space = cs.ConfigurationSpace(seed=seed)
-        sloc_default = len(default_program) if len(default_program) > 0 else None
-        sloc = csh.UniformIntegerHyperparameter(
-            "sloc", lower=min_sloc, upper=max_sloc, default_value=sloc_default
-        )
+        sloc = csh.UniformIntegerHyperparameter("sloc", lower=min_sloc, upper=max_sloc)
         configuration_space.add_hyperparameter(sloc)
         for idx, i in enumerate(range(min_sloc, max_sloc + 1)):
-            op_default = None
-            in1_default = None
-            in2_default = None
-            out_default = None
-            if idx < len(default_program):
-                instruction = default_program[idx]
-                op_default = str(instruction.op)
-                in1_default = instruction.in1
-                if isinstance(instruction.op, BinaryFunction):
-                    in2_default = instruction.in2
-                out_default = instruction.out
             op = csh.CategoricalHyperparameter(
-                f"op_{idx}", choices=[str(op) for op in OPS], default_value=op_default
+                f"op_{idx}", choices=[str(op) for op in OPS]
             )
             lt = cs.GreaterThanCondition(op, sloc, i)
             eq = cs.EqualsCondition(op, sloc, i)
             configuration_space.add_hyperparameter(op)
             configuration_space.add_condition(cs.OrConjunction(lt, eq))
-            in1 = csh.UniformIntegerHyperparameter(
-                f"in1_{idx}", lower=0, upper=MAX_MEMORY, default_value=in1_default
-            )
-            in2 = csh.UniformIntegerHyperparameter(
-                f"in2_{idx}", lower=0, upper=MAX_MEMORY, default_value=in2_default
-            )
+            for input_idx in condition_map:
+                inp = csh.UniformIntegerHyperparameter(
+                    f"in{input_idx}_{idx}", lower=0, upper=max_memory
+                )
+                configuration_space.add_hyperparameter(inp)
+                in_cond = cs.InCondition(inp, op, condition_map[input_idx])
+                lt = cs.GreaterThanCondition(inp, sloc, i)
+                eq = cs.EqualsCondition(inp, sloc, i)
+                sloc_cond = cs.OrConjunction(lt, eq)
+                configuration_space.add_condition(cs.AndConjunction(sloc_cond, in_cond))
+
             out = csh.UniformIntegerHyperparameter(
                 f"out_{idx}",
                 lower=READONLY_REGION + 1,
-                upper=MAX_MEMORY,
-                default_value=out_default,
+                upper=max_memory,
             )
-            configuration_space.add_hyperparameters([in1, in2, out])
-            lt = cs.GreaterThanCondition(in1, sloc, i)
-            eq = cs.EqualsCondition(in1, sloc, i)
-            configuration_space.add_condition(cs.OrConjunction(lt, eq))
+            configuration_space.add_hyperparameter(out)
             lt = cs.GreaterThanCondition(out, sloc, i)
             eq = cs.EqualsCondition(out, sloc, i)
             configuration_space.add_condition(cs.OrConjunction(lt, eq))
-            binary_ops = [str(op) for op in OPS if isinstance(op, BinaryFunction)]
-            lt = cs.GreaterThanCondition(in2, sloc, i)
-            eq = cs.EqualsCondition(in2, sloc, i)
-            cond = cs.OrConjunction(lt, eq)
-            configuration_space.add_condition(
-                cs.AndConjunction(cond, cs.InCondition(in2, op, binary_ops))
-            )
         return configuration_space
 
     @staticmethod
@@ -126,9 +111,8 @@ class NOSBench(NOSLib):
         program = Program()
         for i in range(0, config["sloc"]):
             op = _op_dict[config[f"op_{i}"]]
-            in1 = config[f"in1_{i}"]
-            in2 = config[f"in2_{i}"] if isinstance(op, BinaryFunction) else None
-            out = config[f"out_{i}"]
-            instruction = Instruction(op, Pointer(in1), Pointer(in2), Pointer(out))
+            inputs = [config[f"in{idx}_{i}"] for idx in range(1, op.n_args+1)]
+            output = config[f"out_{i}"]
+            instruction = Instruction(op, inputs, output)
             program.append(instruction)
         return program
