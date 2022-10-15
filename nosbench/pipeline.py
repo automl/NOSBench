@@ -3,21 +3,30 @@ import copy
 from dataclasses import dataclass
 from abc import abstractmethod
 from functools import lru_cache
+from itertools import count
+from collections import defaultdict
 
 import numpy as np
 import torch
 from torch import nn
 from torch.utils.data import Dataset, DataLoader
 from torch.utils.data import random_split
-from sklearn.model_selection import KFold
+import sklearn.model_selection
+import sklearn.datasets
 
 
 class ScikitLearnDataset(Dataset):
     def __init__(self, dataset):
         self.data = torch.from_numpy(dataset.data).float()
-        self.target = torch.from_numpy(dataset.target).long()
+        target = []
+        counter = count(start=0, step=1)
+        self.target_map = defaultdict(lambda: next(counter))
+        for t in dataset.target:
+            target.append(self.target_map[t])
+        self.target = torch.tensor(target, dtype=torch.long)
         self.feature_names = dataset.feature_names
         self.target_names = dataset.target_names
+        self.n_classes = next(counter)
 
     def __getitem__(self, i):
         return self.data[i], self.target[i]
@@ -26,7 +35,7 @@ class ScikitLearnDataset(Dataset):
         return len(self.target)
 
 
-class Pipeline:
+class BasePipeline:
     def __init__(
         self,
         dataset,
@@ -35,9 +44,6 @@ class Pipeline:
         self.dataset = dataset
         self.batch_size = batch_size
         self.loader_generator = self.get_loader_generator()
-
-    def get_loader_generator(self):
-        raise NotImplementedError
 
     def _query(self, state_dict, n_epochs):
         torch.manual_seed(42)
@@ -84,14 +90,6 @@ class Pipeline:
         }
 
     @staticmethod
-    def get_epoch_data(state_dict, epoch):
-        return {
-            "minibatch_losses": state_dict["training_losses"][epoch],
-            "validation_loss": state_dict["validation_losses"][epoch],
-            "cost": state_dict["costs"][epoch],
-        }
-
-    @staticmethod
     def initial_state(program):
         return {
             "program": program,
@@ -106,15 +104,24 @@ class Pipeline:
     def query(self, state_dict, n_epochs):
         return self._query(state_dict, n_epochs)
 
+    @abstractmethod
+    def get_loader_generator(self):
+        raise NotImplementedError
+
+    @staticmethod
+    @abstractmethod
+    def performance(state_dict, epoch):
+        raise NotImplementedError
+
     @staticmethod
     @abstractmethod
     def eval(model, data, target, optimizer, train=True):
-        pass
+        raise NotImplementedError
 
     @staticmethod
     @abstractmethod
     def create_model():
-        pass
+        raise NotImplementedError
 
 
 class TrainValidationSplitMixin:
@@ -132,6 +139,14 @@ class TrainValidationSplitMixin:
         while True:
             yield train_loader, val_loader
 
+    @staticmethod
+    def performance(state_dict, epoch):
+        return {
+            "minibatch_losses": state_dict["training_losses"][epoch],
+            "validation_loss": state_dict["validation_losses"][epoch],
+            "cost": state_dict["costs"][epoch],
+        }
+
 
 class KFoldMixin:
     def __init__(self, n_fold, **kwargs):
@@ -139,7 +154,7 @@ class KFoldMixin:
         super().__init__(**kwargs)
 
     def get_loader_generator(self):
-        splits = KFold(
+        splits = sklearn.model_selection.KFold(
             n_splits=self.n_fold, shuffle=True, random_state=np.random.RandomState(42)
         ).split(self.dataset)
         loaders = []
@@ -159,14 +174,13 @@ class KFoldMixin:
             for fold in range(self.n_fold):
                 yield loaders[fold]
 
-    def get_epoch_data(self, state_dict, epoch):
+    def performance(self, state_dict, epoch):
         total_validation_loss = 0
         cost = 0
         for fold in range(self.n_fold):
             total_validation_loss += state_dict[fold]["validation_losses"][epoch]
             cost += state_dict[fold]["costs"][epoch]
-        return {"validation_loss": total_validation_loss / self.n_fold,
-                "cost": cost}
+        return {"validation_loss": total_validation_loss / self.n_fold, "cost": cost}
 
     def query(self, state_dict, n_epochs):
         for fold in range(self.n_fold):
@@ -180,11 +194,10 @@ class KFoldMixin:
         return states
 
 
-class MLPClassificationPipeline(KFoldMixin, Pipeline):
+class MLPClassificationPipeline(BasePipeline):
     def __init__(self, dataset, hidden_layers, **kwargs):
         input_size = len(dataset.feature_names)
-        output_size = len(dataset.target_names)
-        self.layers = [input_size, *hidden_layers, output_size]
+        self.layers = [input_size, *hidden_layers, dataset.n_classes]
         super().__init__(dataset=dataset, **kwargs)
 
     def create_model(self):
@@ -206,3 +219,12 @@ class MLPClassificationPipeline(KFoldMixin, Pipeline):
             loss.backward()
             optimizer.step()
         return loss
+
+
+class OpenMLTabularPipeline(KFoldMixin, MLPClassificationPipeline):
+    def __init__(self, data_id, hidden_layers, data_home=None, **kwargs):
+        dataset = sklearn.datasets.fetch_openml(
+            data_id=data_id, data_home=data_home, as_frame=False
+        )
+        dataset = ScikitLearnDataset(dataset)
+        super().__init__(dataset=dataset, hidden_layers=hidden_layers, **kwargs)

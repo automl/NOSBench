@@ -6,7 +6,7 @@ import sklearn.datasets
 
 from nosbench.noslib import NOSLib
 from nosbench.optimizers import AdamW
-from nosbench.pipeline import MLPClassificationPipeline, ScikitLearnDataset
+from nosbench.pipeline import OpenMLTabularPipeline
 from nosbench.function import interpolate, bias_correct, clip, size
 from nosbench.function import Function
 from nosbench.program import Program, Instruction, Pointer, READONLY_REGION
@@ -54,14 +54,8 @@ class NOSBench(NOSLib):
         self,
         path="cache",
     ):
-        iris = sklearn.datasets.load_iris()
-        dataset = ScikitLearnDataset(iris)
-        # split = [int(s * len(dataset)) for s in [0.9, 0.1]]
-        pipeline = MLPClassificationPipeline(
-            dataset=dataset,
-            n_fold=10,
-            batch_size=-1,
-            hidden_layers=[16],
+        pipeline = OpenMLTabularPipeline(
+            data_id=31, n_fold=10, batch_size=50, hidden_layers=[16]
         )
         super().__init__(pipeline=pipeline, path=path)
 
