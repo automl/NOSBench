@@ -78,8 +78,7 @@ class RE_NOS(RegularizedEvolution):
         super().__init__(population_size, tournament_size, rng, **kwargs)
 
     def evaluate_element(self, element, **kwargs):
-        result = self.benchmark.query(element, 10)
-        return -result["validation_loss"]
+        return -self.benchmark.query(element, 10)
 
     def random_element(self, rng, **kwargs):
         return copy.deepcopy(self.initial_program)

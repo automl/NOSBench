@@ -23,7 +23,7 @@ class NOSLib:
         torch.save(state_dict, (self.path / str(stem)).with_suffix(".run"))
         self._exists.add(stem)
 
-        data = self.pipeline.performance(state_dict, epoch)
+        loss = self.pipeline.performance(state_dict, epoch)
         if return_state:
-            data["state"] = state_dict
-        return data
+            return loss, state_dict
+        return loss

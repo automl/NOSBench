@@ -141,11 +141,7 @@ class TrainValidationSplitMixin:
 
     @staticmethod
     def performance(state_dict, epoch):
-        return {
-            "minibatch_losses": state_dict["training_losses"][epoch],
-            "validation_loss": state_dict["validation_losses"][epoch],
-            "cost": state_dict["costs"][epoch],
-        }
+        return state_dict["validation_losses"][epoch]
 
 
 class KFoldMixin:
@@ -176,11 +172,9 @@ class KFoldMixin:
 
     def performance(self, state_dict, epoch):
         total_validation_loss = 0
-        cost = 0
         for fold in range(self.n_fold):
             total_validation_loss += state_dict[fold]["validation_losses"][epoch]
-            cost += state_dict[fold]["costs"][epoch]
-        return {"validation_loss": total_validation_loss / self.n_fold, "cost": cost}
+        return total_validation_loss
 
     def query(self, state_dict, n_epochs):
         for fold in range(self.n_fold):
@@ -221,10 +215,18 @@ class MLPClassificationPipeline(BasePipeline):
         return loss
 
 
+class ToyDatasetPipeline(TrainValidationSplitMixin, MLPClassificationPipeline):
+    def __init__(self, split, **kwargs):
+        iris = sklearn.datasets.load_iris()
+        dataset = ScikitLearnDataset(iris)
+        split = [int(s * len(dataset)) for s in split]
+        super().__init__(dataset=dataset, split=split, **kwargs)
+
+
 class OpenMLTabularPipeline(KFoldMixin, MLPClassificationPipeline):
-    def __init__(self, data_id, hidden_layers, data_home=None, **kwargs):
+    def __init__(self, data_id, data_home=None, **kwargs):
         dataset = sklearn.datasets.fetch_openml(
             data_id=data_id, data_home=data_home, as_frame=False
         )
         dataset = ScikitLearnDataset(dataset)
-        super().__init__(dataset=dataset, hidden_layers=hidden_layers, **kwargs)
+        super().__init__(dataset=dataset, **kwargs)

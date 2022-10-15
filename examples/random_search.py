@@ -16,8 +16,7 @@ if __name__ == "__main__":
     for i in range(20000):
         config = cs.sample_configuration()
         program = benchmark.configuration_to_program(config)
-        results = benchmark.query(program, 10)
-        fitness = -results["validation_loss"]
+        fitness = -benchmark.query(program, 10)
         history.append(_Element(program, fitness))
         x = max(history, key=lambda x: x.fitness)
         print(f"Step: {i+1}, Fitness: {x.fitness}")
