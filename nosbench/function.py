@@ -18,6 +18,12 @@ class Function:
         return str(self.func.__name__)
 
 
+def size(x):
+    if x.dim() == 0:
+        return torch.tensor(1.0)
+    return torch.tensor(x.shape.numel(), dtype=torch.float)
+
+
 def clip(x, max):
     return torch.clip(x, min=None, max=max)
 

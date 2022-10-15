@@ -3,12 +3,11 @@ from functools import partial
 
 import torch
 import sklearn.datasets
-from torch.utils.data import random_split
 
 from nosbench.noslib import NOSLib
 from nosbench.optimizers import AdamW
 from nosbench.pipeline import MLPClassificationPipeline, ScikitLearnDataset
-from nosbench.function import interpolate, bias_correct, clip
+from nosbench.function import interpolate, bias_correct, clip, size
 from nosbench.function import Function
 from nosbench.program import Program, Instruction, Pointer, READONLY_REGION
 
@@ -25,6 +24,7 @@ OPS = [
     Function(torch.sign, 1),
     Function(torch.sqrt, 1),
     Function(torch.abs, 1),
+    Function(torch.norm, 1),
     Function(clip, 2),
     Function(torch.sin, 1),
     Function(torch.cos, 1),
@@ -34,6 +34,7 @@ OPS = [
     Function(torch.arctan, 1),
     Function(torch.mean, 1),
     Function(torch.std, 1),
+    Function(size, 1),
     Function(torch.minimum, 2),
     Function(torch.maximum, 2),
     Function(torch.heaviside, 2),
@@ -52,34 +53,15 @@ class NOSBench(NOSLib):
     def __init__(
         self,
         path="cache",
-        save_program: bool = True,
-        save_training_losses: bool = True,
-        save_validation_losses: bool = True,
-        save_test_losses: bool = True,
-        save_torch_state: bool = True,
-        save_costs: bool = True,
     ):
         iris = sklearn.datasets.load_iris()
         dataset = ScikitLearnDataset(iris)
-        split = [int(s * len(dataset)) for s in [0.8, 0.1, 0.1]]
-        generator = torch.Generator().manual_seed(42)
-        train, val, test = random_split(dataset, split, generator=generator)
-        input_size = len(dataset.feature_names)
-        output_size = len(dataset.target_names)
+        # split = [int(s * len(dataset)) for s in [0.9, 0.1]]
         pipeline = MLPClassificationPipeline(
-            train=train,
-            val=val,
-            test=test,
+            dataset=dataset,
+            n_fold=10,
             batch_size=-1,
-            input_size=input_size,
             hidden_layers=[16],
-            output_size=output_size,
-            save_program=save_program,
-            save_training_losses=save_training_losses,
-            save_validation_losses=save_validation_losses,
-            save_test_losses=save_test_losses,
-            save_torch_state=save_torch_state,
-            save_costs=save_costs,
         )
         super().__init__(pipeline=pipeline, path=path)
 
@@ -126,7 +108,7 @@ class NOSBench(NOSLib):
         program = Program()
         for i in range(0, config["sloc"]):
             op = _op_dict[config[f"op_{i}"]]
-            inputs = [config[f"in{idx}_{i}"] for idx in range(1, op.n_args+1)]
+            inputs = [config[f"in{idx}_{i}"] for idx in range(1, op.n_args + 1)]
             output = config[f"out_{i}"]
             instruction = Instruction(op, inputs, output)
             program.append(instruction)
