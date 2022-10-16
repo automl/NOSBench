@@ -5,6 +5,7 @@ from abc import abstractmethod
 from functools import lru_cache
 from itertools import count
 from collections import defaultdict
+import math
 
 import numpy as np
 import torch
@@ -133,7 +134,9 @@ class TrainValidationSplitMixin:
         generator = torch.Generator().manual_seed(42)
         train, val = random_split(self.dataset, self.split, generator=generator)
         train_loader = DataLoader(
-            train, batch_size=self.batch_size if self.batch_size > 0 else len(train)
+            train,
+            batch_size=self.batch_size if self.batch_size > 0 else len(train),
+            drop_last=True,
         )
         val_loader = DataLoader(val, batch_size=len(val))
         while True:
@@ -161,6 +164,7 @@ class KFoldMixin:
                 self.dataset,
                 batch_size=self.batch_size if self.batch_size > 0 else len(train_split),
                 sampler=train_sampler,
+                drop_last=True,
             )
             val_loader = DataLoader(
                 self.dataset, batch_size=len(val_split), sampler=val_sampler
@@ -188,23 +192,7 @@ class KFoldMixin:
         return states
 
 
-class MLPClassificationPipeline(BasePipeline):
-    def __init__(self, dataset, hidden_layers, **kwargs):
-        input_size = len(dataset.feature_names)
-        self.layers = [input_size, *hidden_layers, dataset.n_classes]
-        super().__init__(dataset=dataset, **kwargs)
-
-    def create_model(self):
-        module_list = []
-        prev_layer = self.layers[0]
-        for layer in self.layers[1:-1]:
-            module_list.append(nn.Linear(prev_layer, layer))
-            module_list.append(nn.ReLU())
-            prev_layer = layer
-        module_list.append(nn.Linear(prev_layer, self.layers[-1]))
-        module_list.append(nn.LogSoftmax(-1))
-        return nn.Sequential(*module_list)
-
+class ClassificationPipeline(BasePipeline):
     @staticmethod
     def eval(model, data, target, optimizer, train=True):
         loss = nn.functional.nll_loss(model(data), target)
@@ -215,18 +203,77 @@ class MLPClassificationPipeline(BasePipeline):
         return loss
 
 
-class ToyDatasetPipeline(TrainValidationSplitMixin, MLPClassificationPipeline):
-    def __init__(self, split, **kwargs):
+class ToyPipeline(TrainValidationSplitMixin, ClassificationPipeline):
+    def __init__(self, split, hidden_layers, **kwargs):
+        self.hidden_layers = hidden_layers
         iris = sklearn.datasets.load_iris()
         dataset = ScikitLearnDataset(iris)
         split = [int(s * len(dataset)) for s in split]
         super().__init__(dataset=dataset, split=split, **kwargs)
 
+    def create_model(self):
+        module_list = []
+        prev_layer = len(self.dataset.feature_names)
+        for layer in self.hidden_layers:
+            module_list.append(nn.Linear(prev_layer, layer))
+            module_list.append(nn.ReLU())
+            prev_layer = layer
+        module_list.append(nn.Linear(prev_layer, self.dataset.n_classes))
+        module_list.append(nn.LogSoftmax(-1))
+        return nn.Sequential(*module_list)
 
-class OpenMLTabularPipeline(KFoldMixin, MLPClassificationPipeline):
-    def __init__(self, data_id, data_home=None, **kwargs):
+
+class _Linear(nn.Linear):
+    def reset_parameters(self):
+        nn.init.xavier_uniform_(self.weight, gain=math.sqrt(2))
+        if self.bias is not None:
+            nn.init.zeros_(self.bias)
+
+
+class OpenMLTabularPipeline(KFoldMixin, ClassificationPipeline):
+    def __init__(self, data_id, backbone, head, data_home=None, **kwargs):
         dataset = sklearn.datasets.fetch_openml(
             data_id=data_id, data_home=data_home, as_frame=False
         )
         dataset = ScikitLearnDataset(dataset)
+        assert len(backbone)
+        self.backbone = backbone
+        self.head = head
         super().__init__(dataset=dataset, **kwargs)
+
+    @staticmethod
+    def _backbone(input_size, layer_sizes):
+        prev = input_size
+        layers = []
+        for size in layer_sizes[:-1]:
+            layers.append(_Linear(prev, size))
+            layers.append(nn.BatchNorm1d(size))
+            layers.append(nn.ReLU())
+            prev = size
+        layers.append(_Linear(prev, layer_sizes[-1]))
+        return nn.Sequential(*layers)
+
+    @staticmethod
+    def _head(layer_sizes, output_size):
+        layers = []
+        prev = layer_sizes[0]
+        for size in layer_sizes[1:]:
+            layers.append(_Linear(prev, size))
+            layers.append(nn.ReLU())
+            prev = size
+        layers.append(_Linear(prev, output_size))
+        return nn.Sequential(*layers)
+
+    def create_model(self):
+        layers = []
+        backbone = self._backbone(len(self.dataset.feature_names), self.backbone)
+        layers.append(backbone)
+        if len(self.head):
+            layers.append(_Linear(self.backbone[-1], self.head[0]))
+            layers.append(nn.ReLU())
+            head = self._head(self.head, self.dataset.n_classes)
+            layers.append(head)
+        else:
+            layers.append(_Linear(self.backbone[-1], self.dataset.n_classes))
+        layers.append(nn.LogSoftmax(-1))
+        return nn.Sequential(*layers)
