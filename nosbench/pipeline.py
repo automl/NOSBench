@@ -231,7 +231,7 @@ class _Linear(nn.Linear):
 
 
 class OpenMLTabularPipeline(KFoldMixin, ClassificationPipeline):
-    def __init__(self, data_id, backbone, head, data_home=None, **kwargs):
+    def __init__(self, data_id, backbone, head, dropout=0.0, data_home=None, **kwargs):
         dataset = sklearn.datasets.fetch_openml(
             data_id=data_id, data_home=data_home, as_frame=False
         )
@@ -239,16 +239,19 @@ class OpenMLTabularPipeline(KFoldMixin, ClassificationPipeline):
         assert len(backbone)
         self.backbone = backbone
         self.head = head
+        self.dropout = dropout
         super().__init__(dataset=dataset, **kwargs)
 
     @staticmethod
-    def _backbone(input_size, layer_sizes):
+    def _backbone(input_size, layer_sizes, dropout=0.0):
         prev = input_size
         layers = []
         for size in layer_sizes[:-1]:
             layers.append(_Linear(prev, size))
             layers.append(nn.BatchNorm1d(size))
             layers.append(nn.ReLU())
+            if dropout > 0:
+                layers.append(nn.Dropout(dropout))
             prev = size
         layers.append(_Linear(prev, layer_sizes[-1]))
         return nn.Sequential(*layers)
@@ -266,7 +269,9 @@ class OpenMLTabularPipeline(KFoldMixin, ClassificationPipeline):
 
     def create_model(self):
         layers = []
-        backbone = self._backbone(len(self.dataset.feature_names), self.backbone)
+        backbone = self._backbone(
+            len(self.dataset.feature_names), self.backbone, self.dropout
+        )
         layers.append(backbone)
         if len(self.head):
             layers.append(_Linear(self.backbone[-1], self.head[0]))
