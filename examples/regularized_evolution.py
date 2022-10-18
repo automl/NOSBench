@@ -76,7 +76,7 @@ class RE_NOS(RegularizedEvolution):
         rng=np.random.RandomState(),
         **kwargs,
     ):
-        self.benchmark = nosbench.create("toy")
+        self.benchmark = nosbench.create("nosbench")
         self.initial_program = initial_program
         self.mutations = [
             self.add_instruction_mutation,

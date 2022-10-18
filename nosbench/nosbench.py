@@ -1,17 +1,15 @@
 import os
 from collections import defaultdict
 from itertools import cycle
-from functools import partial
 
 import torch
-import sklearn.datasets
 
 from nosbench.noslib import NOSLib
 from nosbench.optimizers import AdamW
 from nosbench.pipeline import OpenMLTabularPipeline, ToyPipeline
 from nosbench.function import interpolate, bias_correct, clip, size
 from nosbench.function import Function
-from nosbench.program import Program, Instruction, Pointer, READONLY_REGION
+from nosbench.program import Program, Instruction, READONLY_REGION
 
 
 class BaseBenchmark(NOSLib):
@@ -104,7 +102,7 @@ class BaseBenchmark(NOSLib):
         raise NotImplementedError
 
     @classmethod
-    def get_identifier(cls, identifier, path):
+    def from_identifier(cls, identifier, path):
         raise NotImplementedError
 
 
@@ -182,12 +180,12 @@ class NOSBench(BaseBenchmark):
         def read_int(string):
             i = takewhile(str.isnumeric, string)
             length = int(string[:i])
-            return int(string[i + 1 : i + 1 + length]), string[i + 1 + length :]
+            return int(string[i + 1: i + 1 + length]), string[i + 1 + length:]
 
         def read_array(string):
             i = takewhile(str.isnumeric, string)
             array_length = int(string[:i])
-            rest = string[i + 1 :]
+            rest = string[i + 1:]
             array = []
             for _ in range(array_length):
                 value, rest = read_int(rest)
@@ -212,10 +210,12 @@ class NOSBench(BaseBenchmark):
         )
 
     def __str__(self):
-        return (f"class: {self.__class__.__name__}\n"
-                f"data_id: {self.data_id}\n"
-                f"n_fold: {self.n_fold}\n"
-                f"batch_size: {self.batch_size}\n"
-                f"backbone: {self.backbone}\n"
-                f"head: {self.head}\n"
-                f"dropout: {self.dropout}")
+        return (
+            f"class: {self.__class__.__name__}\n"
+            f"data_id: {self.data_id}\n"
+            f"n_fold: {self.n_fold}\n"
+            f"batch_size: {self.batch_size}\n"
+            f"backbone: {self.backbone}\n"
+            f"head: {self.head}\n"
+            f"dropout: {self.dropout}"
+        )

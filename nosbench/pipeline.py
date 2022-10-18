@@ -1,11 +1,7 @@
 import time
-import copy
-from dataclasses import dataclass
 from abc import abstractmethod
-from functools import lru_cache
 from itertools import count
 from collections import defaultdict
-import math
 
 import numpy as np
 import torch
@@ -225,7 +221,7 @@ class ToyPipeline(TrainValidationSplitMixin, ClassificationPipeline):
 
 class _Linear(nn.Linear):
     def reset_parameters(self):
-        nn.init.xavier_uniform_(self.weight, gain=math.sqrt(2))
+        nn.init.xavier_uniform_(self.weight, gain=np.sqrt(2))
         if self.bias is not None:
             nn.init.zeros_(self.bias)
 
