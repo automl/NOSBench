@@ -1,14 +1,14 @@
 import pprint
 from collections import namedtuple
 
-from nosbench import NOSBench
+import nosbench
 
 
 _Element = namedtuple("_Element", "cls fitness")
 
 
 if __name__ == "__main__":
-    benchmark = NOSBench()
+    benchmark = nosbench.create("nosbench")
 
     cs = benchmark.configspace(seed=123)
     history = []
