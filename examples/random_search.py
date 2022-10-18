@@ -8,7 +8,7 @@ _Element = namedtuple("_Element", "cls fitness")
 
 
 if __name__ == "__main__":
-    benchmark = nosbench.create("nosbench")
+    benchmark = nosbench.create("mlp-1")
 
     cs = benchmark.configspace(seed=123)
     history = []

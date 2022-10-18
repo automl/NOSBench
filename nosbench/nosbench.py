@@ -127,7 +127,7 @@ class NOSBench(BaseBenchmark):
         n_fold=10,
         batch_size=60,
         backbone=[290, 272, 254, 236, 218, 200],
-        head=[120],
+        head=[128],
         dropout=0.0,
         path="cache",
     ):

@@ -42,7 +42,7 @@ SGD = Program(
     ]
 )
 
-benchmark = nosbench.create("nosbench")
+benchmark = nosbench.create("mlp-1")
 print(benchmark.query(SGD, 10))
 ```
 
