@@ -2,6 +2,7 @@ import time
 from abc import abstractmethod
 from itertools import count
 from collections import defaultdict
+from functools import cached_property
 
 import numpy as np
 import torch
@@ -10,11 +11,16 @@ from torch.utils.data import Dataset, DataLoader
 from torch.utils.data import random_split
 import sklearn.model_selection
 import sklearn.datasets
+from sklearn.preprocessing import StandardScaler
 
 
 class ScikitLearnDataset(Dataset):
-    def __init__(self, dataset):
-        self.data = torch.from_numpy(dataset.data).float()
+    def __init__(self, dataset, scaler=None):
+        data = dataset.data
+        if scaler is not None:
+            scaler.fit(data)
+            data = scaler.transform(data)
+        self.data = torch.from_numpy(data).float()
         target = []
         counter = count(start=0, step=1)
         self.target_map = defaultdict(lambda: next(counter))
@@ -189,21 +195,28 @@ class KFoldMixin:
 
 
 class ClassificationPipeline(BasePipeline):
-    @staticmethod
-    def eval(model, data, target, optimizer, train=True):
-        loss = nn.functional.nll_loss(model(data), target)
+    def eval(self, model, data, target, optimizer, train=True):
+        loss = nn.functional.nll_loss(model(data), target, weight=self.loss_weight)
         if train:
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
         return loss
 
+    @cached_property
+    def loss_weight(self):
+        total_weight = self.dataset.target.shape[0]
+        classes, counts = torch.unique(self.dataset.target, dim=0, return_counts=True)
+        weight_per_class = total_weight / classes.shape[0]
+        weights = (torch.ones(classes.shape[0]) * weight_per_class) / counts
+        return weights
+
 
 class ToyPipeline(TrainValidationSplitMixin, ClassificationPipeline):
     def __init__(self, split, hidden_layers, **kwargs):
         self.hidden_layers = hidden_layers
         iris = sklearn.datasets.load_iris()
-        dataset = ScikitLearnDataset(iris)
+        dataset = ScikitLearnDataset(iris, StandardScaler())
         split = [int(s * len(dataset)) for s in split]
         super().__init__(dataset=dataset, split=split, **kwargs)
 
@@ -231,7 +244,7 @@ class OpenMLTabularPipeline(KFoldMixin, ClassificationPipeline):
         dataset = sklearn.datasets.fetch_openml(
             data_id=data_id, data_home=data_home, as_frame=False
         )
-        dataset = ScikitLearnDataset(dataset)
+        dataset = ScikitLearnDataset(dataset, StandardScaler())
         assert len(backbone)
         self.backbone = backbone
         self.head = head
