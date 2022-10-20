@@ -1,8 +1,10 @@
-import copy
 from typing import Callable, NewType, Type, List
 from dataclasses import dataclass
 from itertools import chain
+from functools import cached_property
+import copy
 
+import sklearn.datasets
 import torch
 
 
@@ -21,29 +23,36 @@ class Program(list):
     def _rosenbrock(data):
         return torch.sum(100 * (data[1:] - data[:-1] ** 2) ** 2 + (1 - data[:-1]) ** 2)
 
+    @cached_property
+    def dataset(self):
+        dataset = sklearn.datasets.load_iris()
+        data = torch.from_numpy(dataset.data).float()
+        target = torch.from_numpy(dataset.target).long()
+        return data, target
+
     def __eq__(self, other):
         return hash(self) == hash(other)
 
     def __hash__(self):
-        generator = torch.Generator().manual_seed(42)
-        data = torch.randn(100, generator=generator)
-        params = torch.nn.Parameter(data)
+        torch.manual_seed(42)
+        data, target = self.dataset
+        model = torch.nn.Sequential(
+            torch.nn.Linear(4, 8),
+            torch.nn.Linear(8, 3),
+            torch.nn.LogSoftmax(-1),
+        )
         optimizer_class = self.optimizer()
-        optim = optimizer_class([params])
+        optimizer = optimizer_class(model.parameters())
 
-        output_string = ""
-        output = self._sphere(params)
-        for _ in range(5):
-            optim.zero_grad()
-            output.backward()
-            optim.step()
-            output = self._sphere(params)
-            if torch.isnan(output):
-                return -2
-            if torch.isinf(output):
-                return -3
-            output_string += f"{output:.4f}"
-        return int(output_string.replace(".", "")[:16])
+        for _ in range(10):
+            loss = torch.nn.functional.nll_loss(model(data), target)
+            if torch.isnan(loss) or torch.isinf(loss):
+                break
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+        loss = torch.nn.functional.nll_loss(model(data), target)
+        return hash(loss.item())
 
     def optimizer(self) -> Type[torch.optim.Optimizer]:
         return create_optimizer(self)
@@ -152,3 +161,15 @@ def create_optimizer(program):
             return loss
 
     return Optimizer
+
+
+def bruteforce_optimize(program):
+    i = 0
+    while i < len(program):
+        program_copy = copy.deepcopy(program)
+        program_copy.pop(i)
+        if program_copy == program:
+            program = program_copy
+        else:
+            i += 1
+    return program
