@@ -1,15 +1,43 @@
 import pathlib
-from filelock import FileLock
+import json
 
+from filelock import FileLock
 import torch
+
+from nosbench.optimizers import SGD, Adam, AdamW, RMSprop, Adagrad
 
 
 class NOSLib:
     def __init__(self, pipeline, path="cache"):
         self.path = pathlib.Path(path)
-        self.lock_path = (".lock" / self.path)
+        self.lock_path = ".lock" / self.path
         self.path.mkdir(parents=True, exist_ok=True)
         self.lock_path.mkdir(parents=True, exist_ok=True)
+        with FileLock((self.lock_path / "metadata.lock")):
+            metadata_path = self.path / "metadata.json"
+            if metadata_path.exists():
+                with open(metadata_path, "r") as f:
+                    metadata = json.load(f)
+                    assert all(
+                        [
+                            metadata["SGD"] == hash(SGD),
+                            metadata["Adam"] == hash(Adam),
+                            metadata["AdamW"] == hash(AdamW),
+                            metadata["RMSprop"] == hash(RMSprop),
+                            metadata["Adagrad"] == hash(Adagrad),
+                        ]
+                    )
+            else:
+                metadata = {
+                    "SGD": hash(SGD),
+                    "Adam": hash(Adam),
+                    "AdamW": hash(AdamW),
+                    "RMSprop": hash(RMSprop),
+                    "Adagrad": hash(Adagrad),
+                }
+                with open(metadata_path, "w") as f:
+                    json.dump(metadata, f)
+
         self._exists = set()
         for run in self.path.glob("*.run"):
             self._exists.add(int(run.stem))
