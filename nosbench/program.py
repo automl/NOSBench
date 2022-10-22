@@ -44,15 +44,19 @@ class Program(list):
         optimizer_class = self.optimizer()
         optimizer = optimizer_class(model.parameters())
 
+        loss = torch.nn.functional.nll_loss(model(data), target)
+        exp_avg = loss.item()
         for _ in range(10):
-            loss = torch.nn.functional.nll_loss(model(data), target)
-            if torch.isnan(loss) or torch.isinf(loss):
-                break
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-        loss = torch.nn.functional.nll_loss(model(data), target)
-        return hash(loss.item())
+            loss = torch.nn.functional.nll_loss(model(data), target)
+            if torch.isinf(loss):
+                return -3
+            elif torch.isnan(loss):
+                return -2
+            exp_avg = (loss.item() * 0.999 + exp_avg * 0.001)
+        return hash(exp_avg)
 
     def optimizer(self) -> Type[torch.optim.Optimizer]:
         return create_optimizer(self)
