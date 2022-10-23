@@ -19,7 +19,7 @@ class NOSLib:
             if metadata_path.exists():
                 with open(metadata_path, "r") as f:
                     metadata = json.load(f)
-                    assert all(
+                    if not all(
                         [
                             metadata["SGD"] == hash(SGD),
                             metadata["Adam"] == hash(Adam),
@@ -27,7 +27,14 @@ class NOSLib:
                             metadata["RMSprop"] == hash(RMSprop),
                             metadata["Adagrad"] == hash(Adagrad),
                         ]
-                    )
+                    ):
+                        raise UserWarning(
+                            f"Metadata in '{path}' does not match with "
+                            "calculated hashes. This could be due to version "
+                            "difference between the machine running this and "
+                            "the machine generated the data. Update hashes by "
+                            f"running 'python -m scripts.update_cache --path {path}'"
+                        )
             else:
                 metadata = {
                     "SGD": hash(SGD),
@@ -57,7 +64,7 @@ class NOSLib:
                     "n_epochs": 0,
                     "stats": [],
                     "states": [],
-                    }
+                }
             if epoch >= state_dict["n_epochs"]:
                 stats, states = self.pipeline.evaluate(
                     state_dict["program"],
@@ -66,7 +73,9 @@ class NOSLib:
                 )
                 fillvalue = stats[0].empty_like()
                 concat_stats = []
-                for s1, s2 in zip_longest(state_dict["stats"], stats, fillvalue=fillvalue):
+                for s1, s2 in zip_longest(
+                    state_dict["stats"], stats, fillvalue=fillvalue
+                ):
                     concat_stats.append(s1.concat(s2))
 
                 state_dict["states"] = states
