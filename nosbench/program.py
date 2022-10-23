@@ -8,6 +8,9 @@ import sklearn.datasets
 import torch
 
 
+from nosbench.utils import deterministic
+
+
 Pointer = NewType("Pointer", int)
 
 
@@ -33,8 +36,8 @@ class Program(list):
     def __eq__(self, other):
         return hash(self) == hash(other)
 
+    @deterministic(seed=42)
     def __hash__(self):
-        torch.manual_seed(42)
         data, target = self.dataset
         model = torch.nn.Sequential(
             torch.nn.Linear(4, 8),

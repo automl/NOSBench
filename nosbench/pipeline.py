@@ -14,6 +14,8 @@ from torch.utils.data import random_split
 import sklearn.model_selection
 import sklearn.datasets
 
+from nosbench.utils import deterministic
+
 
 class ScikitLearnDataset(Dataset):
     def __init__(self, dataset, scaler=None):
@@ -37,21 +39,6 @@ class ScikitLearnDataset(Dataset):
 
     def __len__(self):
         return len(self.target)
-
-
-def deterministic(seed):
-    def _wrapper(f):
-        @wraps(f)
-        def func(*args, **kwargs):
-            random_state = torch.get_rng_state()
-            torch.manual_seed(seed)
-            value = f(*args, **kwargs)
-            torch.set_rng_state(random_state)
-            return value
-
-        return func
-
-    return _wrapper
 
 
 class Result(ABC):
@@ -210,6 +197,7 @@ class ToyMLPModelFactory(ModelFactory):
     hidden_layers: list
     n_classes: int
 
+    @deterministic(seed=42)
     def create_model(self):
         module_list = []
         prev_layer = self.n_features
@@ -259,6 +247,7 @@ class MLPModelFactory(ModelFactory):
         layers.append(_Linear(prev, output_size))
         return nn.Sequential(*layers)
 
+    @deterministic(seed=42)
     def create_model(self):
         layers = []
         backbone = self._backbone(self.n_features, self.backbone)
