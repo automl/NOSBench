@@ -3,10 +3,15 @@ from collections import defaultdict
 from itertools import cycle
 
 import torch
+import sklearn.datasets
+from sklearn.preprocessing import StandardScaler
 
 from nosbench.noslib import NOSLib
 from nosbench.optimizers import AdamW
-from nosbench.pipeline import OpenMLTabularPipeline, ToyPipeline
+from nosbench.pipeline import Pipeline, ClassificationTrainer, ScikitLearnDataset
+from nosbench.pipeline import ToyMLPModelFactory, MLPModelFactory
+from nosbench.pipeline import TrainValidationSplit, CrossValidation
+
 from nosbench.function import interpolate, bias_correct, clip, size
 from nosbench.function import Function
 from nosbench.program import Program, Instruction, READONLY_REGION
@@ -108,7 +113,13 @@ class BaseBenchmark(NOSLib):
 
 class ToyBenchmark(BaseBenchmark):
     def __init__(self, path="cache"):
-        pipeline = ToyPipeline(hidden_layers=[16], batch_size=-1, split=[0.8, 0.2])
+        iris = sklearn.datasets.load_iris()
+        dataset = ScikitLearnDataset(iris, StandardScaler())
+        trainer = ClassificationTrainer()
+        input_size = len(dataset.feature_names)
+        model_factory = ToyMLPModelFactory(input_size, [16], dataset.n_classes)
+        evaluation_metric = TrainValidationSplit(training_percentage=0.8)
+        pipeline = Pipeline(dataset, trainer, model_factory, evaluation_metric)
         path = os.path.join(path, "toy")
         super().__init__(pipeline=pipeline, path=path)
 
@@ -124,27 +135,30 @@ class NOSBench(BaseBenchmark):
     def __init__(
         self,
         data_id=31,
-        n_fold=10,
+        n_splits=10,
         batch_size=60,
         backbone=[290, 272, 254, 236, 218, 200],
         head=[128],
-        dropout=0.0,
         path="cache",
+        data_home=None,
     ):
         self.data_id = data_id
-        self.n_fold = n_fold
+        self.n_splits = n_splits
         self.batch_size = batch_size
         self.backbone = backbone
         self.head = head
-        self.dropout = dropout
-        pipeline = OpenMLTabularPipeline(
-            data_id=self.data_id,
-            n_fold=self.n_fold,
-            batch_size=self.batch_size,
-            backbone=self.backbone,
-            head=self.head,
-            dropout=self.dropout,
+        dataset = sklearn.datasets.fetch_openml(
+            data_id=data_id, data_home=data_home, as_frame=False
         )
+        dataset = ScikitLearnDataset(dataset, StandardScaler())
+        trainer = ClassificationTrainer()
+        model_factory = MLPModelFactory(
+            len(dataset.feature_names),
+            dataset.n_classes,
+            self.backbone,
+            self.head)
+        evaluation_metric = CrossValidation(n_splits=n_splits)
+        pipeline = Pipeline(dataset, trainer, model_factory, evaluation_metric)
         path = os.path.join(path, self.get_identifier())
         super().__init__(pipeline=pipeline, path=path)
 
@@ -161,9 +175,8 @@ class NOSBench(BaseBenchmark):
 
         identifier = (
             int_to_id(self.data_id)
-            + int_to_id(self.n_fold)
+            + int_to_id(self.n_splits)
             + int_to_id(self.batch_size)
-            + int_to_id(int(self.dropout * 1e7))
             + int_array_to_id(self.backbone)
             + int_array_to_id(self.head)
         )
@@ -193,19 +206,17 @@ class NOSBench(BaseBenchmark):
             return array, rest
 
         data_id, identifier = read_int(identifier)
-        n_fold, identifier = read_int(identifier)
+        n_splits, identifier = read_int(identifier)
         batch_size, identifier = read_int(identifier)
-        dropout, identifier = read_int(identifier)
         backbone, identifier = read_array(identifier)
         head, identifier = read_array(identifier)
         assert len(identifier) == 0
         return cls(
             data_id=data_id,
-            n_fold=n_fold,
+            n_splits=n_splits,
             batch_size=batch_size,
             backbone=backbone,
             head=head,
-            dropout=dropout / 1e7,
             path=path,
         )
 
@@ -213,9 +224,8 @@ class NOSBench(BaseBenchmark):
         return (
             f"class: {self.__class__.__name__}\n"
             f"data_id: {self.data_id}\n"
-            f"n_fold: {self.n_fold}\n"
+            f"n_splits: {self.n_splits}\n"
             f"batch_size: {self.batch_size}\n"
             f"backbone: {self.backbone}\n"
             f"head: {self.head}\n"
-            f"dropout: {self.dropout}"
         )

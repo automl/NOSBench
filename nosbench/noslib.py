@@ -1,5 +1,6 @@
 import pathlib
 import json
+from itertools import zip_longest
 
 from filelock import FileLock
 import torch
@@ -51,13 +52,30 @@ class NOSLib:
             if stem in self._exists or path.exists():
                 state_dict = torch.load(path)
             else:
-                state_dict = self.pipeline.initial_state(program)
-            # if epoch >= state_dict["n_epochs"]:
-            state_dict = self.pipeline.query(state_dict, epoch + 1)
-            torch.save(state_dict, path)
-            self._exists.add(stem)
+                state_dict = {
+                    "program": program,
+                    "n_epochs": 0,
+                    "stats": [],
+                    "states": [],
+                    }
+            if epoch >= state_dict["n_epochs"]:
+                stats, states = self.pipeline.evaluate(
+                    state_dict["program"],
+                    epoch - state_dict["n_epochs"] + 1,
+                    state_dict["states"],
+                )
+                fillvalue = stats[0].empty_like()
+                concat_stats = []
+                for s1, s2 in zip_longest(state_dict["stats"], stats, fillvalue=fillvalue):
+                    concat_stats.append(s1.concat(s2))
 
-        loss = self.pipeline.performance(state_dict, epoch)
+                state_dict["states"] = states
+                state_dict["n_epochs"] = epoch + 1
+                state_dict["stats"] = concat_stats
+
+                torch.save(state_dict, path)
+                self._exists.add(stem)
+        loss = self.pipeline.evaluation_metric.evaluate(state_dict["stats"], epoch)
         if return_state:
             return loss, state_dict
         return loss

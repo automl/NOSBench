@@ -26,10 +26,10 @@ def create(name, path="cache", **kwargs):
 
 
 register("toy", "toy", ToyBenchmark)
-register("mlp-1", "2n312o102s601b06s3e2903n2723c2543h2363n2183o2001e3b128", NOSBench)
-register("mlp-2", "2n312o102s211b03h3e2013n2013c2001o3n128", NOSBench)
-register("mlp-3", "2n312o102s501b03h3e5293n3653c2001o3n128", NOSBench)
-register("mlp-4", "2n312o102s211b03h3e2783n2393c2001o3n128", NOSBench)
+register("mlp-1", "2n312o102s606s3e2903n2723c2543h2363n2183o2001e3b128", NOSBench)
+register("mlp-2", "2n312o102s213h3e2013n2013c2001o3n128", NOSBench)
+register("mlp-3", "2n312o102s503h3e5293n3653c2001o3n128", NOSBench)
+register("mlp-4", "2n312o102s213h3e2783n2393c2001o3n128", NOSBench)
 
 
 __all__ = ["NOSBench", "Toybenchmark", "READONLY_REGION", "register", "create"]

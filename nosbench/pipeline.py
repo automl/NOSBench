@@ -1,8 +1,10 @@
 import time
-from abc import abstractmethod
-from itertools import count
+from abc import abstractmethod, ABC
+from itertools import count, zip_longest
 from collections import defaultdict
-from functools import cached_property
+from functools import wraps
+from dataclasses import dataclass, field
+from typing import Optional
 
 import numpy as np
 import torch
@@ -11,7 +13,6 @@ from torch.utils.data import Dataset, DataLoader
 from torch.utils.data import random_split
 import sklearn.model_selection
 import sklearn.datasets
-from sklearn.preprocessing import StandardScaler
 
 
 class ScikitLearnDataset(Dataset):
@@ -38,196 +39,185 @@ class ScikitLearnDataset(Dataset):
         return len(self.target)
 
 
-class BasePipeline:
-    def __init__(
-        self,
-        dataset,
-        batch_size,
-    ):
-        self.dataset = dataset
-        self.batch_size = batch_size
-        self.loader_generator = self.get_loader_generator()
+def deterministic(seed):
+    def _wrapper(f):
+        @wraps(f)
+        def func(*args, **kwargs):
+            random_state = torch.get_rng_state()
+            torch.manual_seed(seed)
+            value = f(*args, **kwargs)
+            torch.set_rng_state(random_state)
+            return value
 
-    def _query(self, state_dict, n_epochs):
-        torch.manual_seed(42)
-        model = self.create_model()
-        program = state_dict["program"]
-        optimizer_class = program.optimizer()
-        optimizer = optimizer_class(model.parameters())
-        if state_dict["torch_state"] is not None:
-            model.load_state_dict(state_dict["torch_state"]["model"])
-            optimizer.load_state_dict(state_dict["torch_state"]["optimizer"])
-        training_losses = state_dict["training_losses"]
-        validation_losses = state_dict["validation_losses"]
-        costs = state_dict["costs"]
-        total_cost = costs[-1] if state_dict["n_epochs"] > 0 else 0
-        train_loader, val_loader = next(self.loader_generator)
-        for epoch in range(state_dict["n_epochs"], n_epochs):
-            prev_time = time.time()
+        return func
+
+    return _wrapper
+
+
+class Result(ABC):
+    @abstractmethod
+    def concat(self, other):
+        """Concatenate given results"""
+
+    def empty_like(self):
+        return self.__class__()
+
+
+@dataclass(frozen=True)
+class ClassificationResult(Result):
+    training_losses: list = field(default_factory=list)
+    validation_losses: list = field(default_factory=list)
+    accuracies: list = field(default_factory=list)
+    training_costs: list = field(default_factory=list)
+
+    def concat(self, other):
+        other_costs = other.training_costs
+        if len(self.training_costs) > 0:
+            other_costs = [a + self.training_costs[-1] for a in other.training_costs]
+
+        return ClassificationResult(
+            self.training_losses + other.training_losses,
+            self.validation_losses + other.validation_losses,
+            self.accuracies + other.accuracies,
+            self.training_costs + other_costs
+        )
+
+
+class Trainer(ABC):
+    @abstractmethod
+    def train(self, model, optimizer, train_loader, val_loader, epochs):
+        """Train and validate given model on train/val for epochs"""
+
+
+class ClassificationTrainer(Trainer):
+    target_weights: Optional[float] = None
+
+    @deterministic(seed=42)
+    def train(self, model, optimizer, train_loader, val_loader, epochs):
+        training_losses = []
+        validation_losses = []
+        accuracies = []
+        training_costs = []
+        training_cost = 0.0
+        for epoch in range(epochs):
             minibatch_losses = []
+            prev_time = time.monotonic()
             for data, target in train_loader:
-                loss = self.eval(model, data, target, optimizer, train=True)
+                loss = nn.functional.nll_loss(
+                    model(data), target, weight=self.target_weights
+                )
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
                 minibatch_losses.append(loss.item())
             training_losses.append(minibatch_losses)
-            total_cost += time.time() - prev_time
-            costs.append(total_cost)
+            training_cost += time.monotonic() - prev_time
+            training_costs.append(training_cost)
 
+            validation_loss = 0.0
+            accuracy = 0.0
+            size = 0
             with torch.no_grad():
                 for data, target in val_loader:
-                    loss = self.eval(model, data, target, optimizer, train=False)
-                    validation_losses.append(loss.item())
+                    output = model(data)
+                    loss = nn.functional.nll_loss(output, target, reduction="sum")
+                    validation_loss += loss.item()
+                    accuracy += (output.max(dim=1)[1] == target).sum().item()
+                    size += len(data)
+                accuracies.append(accuracy / size)
+                validation_losses.append(validation_loss / size)
 
-        torch_state = {
-            "model": model.state_dict(),
-            "optimizer": optimizer.state_dict(),
-        }
+        return ClassificationResult(
+            training_losses=training_losses,
+            validation_losses=validation_losses,
+            accuracies=accuracies,
+            training_costs=training_costs,
+            )
 
-        state_dict["n_epochs"] = n_epochs
-        return {
-            "program": program,
-            "training_losses": training_losses,
-            "validation_losses": validation_losses,
-            "torch_state": torch_state,
-            "costs": costs,
-            "n_epochs": n_epochs,
-        }
 
-    @staticmethod
-    def initial_state(program):
-        return {
-            "program": program,
-            "training_losses": [],
-            "validation_losses": [],
-            "test_losses": [],
-            "torch_state": None,
-            "costs": [],
-            "n_epochs": 0,
-        }
-
-    def query(self, state_dict, n_epochs):
-        return self._query(state_dict, n_epochs)
+class EvaluationMetric(ABC):
+    @abstractmethod
+    def evaluations(self, dataset):
+        """Yield training and validation data loader generator"""
 
     @abstractmethod
-    def get_loader_generator(self):
-        raise NotImplementedError
-
-    @staticmethod
-    @abstractmethod
-    def performance(state_dict, epoch):
-        raise NotImplementedError
-
-    @staticmethod
-    @abstractmethod
-    def eval(model, data, target, optimizer, train=True):
-        raise NotImplementedError
-
-    @staticmethod
-    @abstractmethod
-    def create_model():
-        raise NotImplementedError
+    def evaluate(self, stats, epoch):
+        """Calculate final evaluation result from stats"""
 
 
-class TrainValidationSplitMixin:
-    def __init__(self, split, **kwargs):
-        self.split = split
-        super().__init__(**kwargs)
+@dataclass
+class TrainValidationSplit(EvaluationMetric):
+    training_percentage: float = 0.8
+    batch_size: float = -1
 
-    def get_loader_generator(self):
-        generator = torch.Generator().manual_seed(42)
-        train, val = random_split(self.dataset, self.split, generator=generator)
+    @deterministic(seed=42)
+    def evaluations(self, dataset):
+        split = [self.training_percentage, 1 - self.training_percentage]
+        split = [int(np.ceil(s * len(dataset))) for s in split]
+        train, val = random_split(dataset, split)
         train_loader = DataLoader(
             train,
             batch_size=self.batch_size if self.batch_size > 0 else len(train),
             drop_last=True,
         )
         val_loader = DataLoader(val, batch_size=len(val))
-        while True:
-            yield train_loader, val_loader
+        yield train_loader, val_loader
 
-    @staticmethod
-    def performance(state_dict, epoch):
-        return state_dict["validation_losses"][epoch]
+    def evaluate(self, stats, epoch):
+        return stats[0].validation_losses[epoch]
 
 
-class KFoldMixin:
-    def __init__(self, n_fold, **kwargs):
-        self.n_fold = n_fold
-        super().__init__(**kwargs)
+@dataclass
+class CrossValidation(EvaluationMetric):
+    n_splits: int = 10
+    batch_size: float = -1
 
-    def get_loader_generator(self):
+    @deterministic(seed=42)
+    def evaluations(self, dataset):
         splits = sklearn.model_selection.KFold(
-            n_splits=self.n_fold, shuffle=True, random_state=np.random.RandomState(42)
-        ).split(self.dataset)
-        loaders = []
+            n_splits=self.n_splits, shuffle=True, random_state=np.random.RandomState(42)
+        ).split(dataset)
         for train_split, val_split in splits:
             train_sampler = torch.utils.data.SubsetRandomSampler(train_split)
             val_sampler = torch.utils.data.SubsetRandomSampler(val_split)
             train_loader = DataLoader(
-                self.dataset,
+                dataset,
                 batch_size=self.batch_size if self.batch_size > 0 else len(train_split),
                 sampler=train_sampler,
                 drop_last=True,
             )
             val_loader = DataLoader(
-                self.dataset, batch_size=len(val_split), sampler=val_sampler
+                dataset, batch_size=len(val_split), sampler=val_sampler
             )
-            loaders.append((train_loader, val_loader))
-        while True:
-            for fold in range(self.n_fold):
-                yield loaders[fold]
+            yield train_loader, val_loader
 
-    def performance(self, state_dict, epoch):
-        total_validation_loss = 0
-        for fold in range(self.n_fold):
-            total_validation_loss += state_dict[fold]["validation_losses"][epoch]
-        return total_validation_loss
-
-    def query(self, state_dict, n_epochs):
-        for fold in range(self.n_fold):
-            self._query(state_dict[fold], n_epochs)
-        return state_dict
-
-    def initial_state(self, program):
-        states = []
-        for fold in range(self.n_fold):
-            states.append(super().initial_state(program))
-        return states
+    def evaluate(self, stats, epoch):
+        validation_loss = 0.0
+        for stat in stats:
+            validation_loss += stat.validation_losses[epoch]
+        return validation_loss / len(stats)
 
 
-class ClassificationPipeline(BasePipeline):
-    def eval(self, model, data, target, optimizer, train=True):
-        loss = nn.functional.nll_loss(model(data), target, weight=self.loss_weight)
-        if train:
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-        return loss
-
-    @cached_property
-    def loss_weight(self):
-        total_weight = self.dataset.target.shape[0]
-        classes, counts = torch.unique(self.dataset.target, dim=0, return_counts=True)
-        weight_per_class = total_weight / classes.shape[0]
-        weights = (torch.ones(classes.shape[0]) * weight_per_class) / counts
-        return weights
+class ModelFactory(ABC):
+    @abstractmethod
+    def create_model(self):
+        """Return initialized model"""
 
 
-class ToyPipeline(TrainValidationSplitMixin, ClassificationPipeline):
-    def __init__(self, split, hidden_layers, **kwargs):
-        self.hidden_layers = hidden_layers
-        iris = sklearn.datasets.load_iris()
-        dataset = ScikitLearnDataset(iris, StandardScaler())
-        split = [int(s * len(dataset)) for s in split]
-        super().__init__(dataset=dataset, split=split, **kwargs)
+@dataclass
+class ToyMLPModelFactory(ModelFactory):
+    n_features: int
+    hidden_layers: list
+    n_classes: int
 
     def create_model(self):
         module_list = []
-        prev_layer = len(self.dataset.feature_names)
+        prev_layer = self.n_features
         for layer in self.hidden_layers:
             module_list.append(nn.Linear(prev_layer, layer))
             module_list.append(nn.ReLU())
             prev_layer = layer
-        module_list.append(nn.Linear(prev_layer, self.dataset.n_classes))
+        module_list.append(nn.Linear(prev_layer, self.n_classes))
         module_list.append(nn.LogSoftmax(-1))
         return nn.Sequential(*module_list)
 
@@ -239,28 +229,21 @@ class _Linear(nn.Linear):
             nn.init.zeros_(self.bias)
 
 
-class OpenMLTabularPipeline(KFoldMixin, ClassificationPipeline):
-    def __init__(self, data_id, backbone, head, dropout=0.0, data_home=None, **kwargs):
-        dataset = sklearn.datasets.fetch_openml(
-            data_id=data_id, data_home=data_home, as_frame=False
-        )
-        dataset = ScikitLearnDataset(dataset, StandardScaler())
-        assert len(backbone)
-        self.backbone = backbone
-        self.head = head
-        self.dropout = dropout
-        super().__init__(dataset=dataset, **kwargs)
+@dataclass
+class MLPModelFactory(ModelFactory):
+    n_features: int
+    n_classes: int
+    backbone: list
+    head: list
 
     @staticmethod
-    def _backbone(input_size, layer_sizes, dropout=0.0):
+    def _backbone(input_size, layer_sizes):
         prev = input_size
         layers = []
         for size in layer_sizes[:-1]:
             layers.append(_Linear(prev, size))
             layers.append(nn.BatchNorm1d(size))
             layers.append(nn.ReLU())
-            if dropout > 0:
-                layers.append(nn.Dropout(dropout))
             prev = size
         layers.append(_Linear(prev, layer_sizes[-1]))
         return nn.Sequential(*layers)
@@ -278,16 +261,45 @@ class OpenMLTabularPipeline(KFoldMixin, ClassificationPipeline):
 
     def create_model(self):
         layers = []
-        backbone = self._backbone(
-            len(self.dataset.feature_names), self.backbone, self.dropout
-        )
+        backbone = self._backbone(self.n_features, self.backbone)
         layers.append(backbone)
         if len(self.head):
             layers.append(_Linear(self.backbone[-1], self.head[0]))
             layers.append(nn.ReLU())
-            head = self._head(self.head, self.dataset.n_classes)
+            head = self._head(self.head, self.n_classes)
             layers.append(head)
         else:
-            layers.append(_Linear(self.backbone[-1], self.dataset.n_classes))
+            layers.append(_Linear(self.backbone[-1], self.n_classes))
         layers.append(nn.LogSoftmax(-1))
         return nn.Sequential(*layers)
+
+
+@dataclass
+class Pipeline:
+    dataset: Dataset
+    trainer: Trainer
+    model_factory: ModelFactory
+    evaluation_metric: EvaluationMetric
+
+    @deterministic(seed=42)
+    def evaluate(self, program, epochs, states=[]):
+        stats = []
+        new_states = []
+        for (train, val), state in zip_longest(
+            self.evaluation_metric.evaluations(self.dataset), states
+        ):
+            model = self.model_factory.create_model()
+            optimizer_class = program.optimizer()
+            optimizer = optimizer_class(model.parameters())
+            if state is not None:
+                model.load_state_dict(state["model"])
+                optimizer.load_state_dict(state["optimizer"])
+            result = self.trainer.train(model, optimizer, train, val, epochs)
+            stats.append(result)
+            new_states.append(
+                {
+                    "model": model.state_dict(),
+                    "optimizer": optimizer.state_dict(),
+                }
+            )
+        return stats, new_states
