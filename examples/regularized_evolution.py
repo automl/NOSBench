@@ -3,6 +3,11 @@ from functools import partial
 from collections import namedtuple
 import copy
 import pprint
+import argparse
+from pathlib import Path
+import json
+import time
+import pickle
 
 from nosbench.program import (
     Instruction,
@@ -10,7 +15,6 @@ from nosbench.program import (
     READONLY_REGION,
 )
 import nosbench
-from nosbench.optimizers import AdamW, SGD
 
 
 import numpy as np
@@ -72,11 +76,14 @@ class RE_NOS(RegularizedEvolution):
         self,
         population_size,
         tournament_size,
-        initial_program=AdamW,
+        initial_program=nosbench.optimizers.AdamW,
+        benchmark_name="toy",
+        benchmark_epochs=50,
         rng=np.random.RandomState(),
         **kwargs,
     ):
-        self.benchmark = nosbench.create("mlp-1")
+        self.benchmark = nosbench.create(benchmark_name)
+        self.benchmark_epochs = benchmark_epochs
         self.initial_program = initial_program
         self.mutations = [
             self.add_instruction_mutation,
@@ -86,7 +93,7 @@ class RE_NOS(RegularizedEvolution):
         super().__init__(population_size, tournament_size, rng, **kwargs)
 
     def evaluate_element(self, element, **kwargs):
-        return -self.benchmark.query(element, 10)
+        return -self.benchmark.query(element, self.benchmark_epochs)
 
     def random_element(self, rng, **kwargs):
         return copy.deepcopy(self.initial_program)
@@ -122,14 +129,52 @@ class RE_NOS(RegularizedEvolution):
         return program
 
 
+class ProgramArgparseAction(argparse.Action):
+    def __call__(self, parser, namespace, values, option_string=None):
+        program = getattr(nosbench.optimizers, values)
+        setattr(namespace, self.dest, program)
+
+
 if __name__ == "__main__":
-    re = RE_NOS(100, 25, rng=np.random.RandomState(123), initial_program=AdamW)
-    for i in range(20000):
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--output_path", type=str, default="results")
+    parser.add_argument("--benchmark_name", type=str, default="toy")
+    parser.add_argument("--benchmark_epochs", type=int, default=50)
+    parser.add_argument("--seed", type=int, default=123)
+    parser.add_argument("--population_size", type=int, default=100)
+    parser.add_argument("--tournament_size", type=int, default=25)
+    parser.add_argument("--evaluations", type=int, default=100000)
+    parser.add_argument("--save_every", type=int, default=100)
+    parser.add_argument("--initial_program", type=str, default="AdamW")
+    args = parser.parse_args()
+
+    initial_program = getattr(nosbench.optimizers, args.initial_program)
+
+    re = RE_NOS(
+        args.population_size,
+        args.tournament_size,
+        rng=np.random.RandomState(args.seed),
+        initial_program=initial_program,
+        benchmark_name=args.benchmark_name,
+        benchmark_epochs=args.benchmark_epochs,
+    )
+
+    timestr = time.strftime("%Y-%m-%d")
+    settings = {"search_algorithm": "RE", "args": vars(args)}
+    dump = json.dumps(settings, sort_keys=True)
+    path = Path(args.output_path)
+    path.mkdir(parents=True, exist_ok=True)
+    with open(path / f"{timestr}-{hash(dump)}.json", "w") as f:
+        f.write(dump)
+
+    for i in range(args.population_size, args.evaluations):
         x = max(re.history, key=lambda x: x.fitness)
-        print(f"Step: {i+1}, Fitness: {x.fitness}")
-        if x.fitness == 0.0:
-            break
+        print(f"Evaluation: {i+1}, Fitness: {x.fitness}")
         re.step()
+
+        if ((i % args.save_every) == 0 and i > 0) or (i >= args.evaluations - 1):
+            with open(path / f"{timestr}-{hash(dump)}.pickle", "wb") as f:
+                pickle.dump(re.history, f)
 
     x = max(re.history, key=lambda x: x.fitness)
     print("Incumbent optimizer:")

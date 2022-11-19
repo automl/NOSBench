@@ -30,6 +30,8 @@ def runner(config, budget, seed):
 
 
 initial_design = RandomInitialDesign(scenario, n_configs=10)
-smac = MultiFidelityFacade(scenario, runner, overwrite=True, initial_design=initial_design)
+smac = MultiFidelityFacade(
+    scenario, runner, overwrite=True, initial_design=initial_design
+)
 config = smac.optimize()
 pprint.pprint(benchmark.configuration_to_program(config))
