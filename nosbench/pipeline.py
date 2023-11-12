@@ -66,7 +66,7 @@ class ClassificationResult(Result):
             self.training_losses + other.training_losses,
             self.validation_losses + other.validation_losses,
             self.accuracies + other.accuracies,
-            self.training_costs + other_costs
+            self.training_costs + other_costs,
         )
 
 
@@ -118,8 +118,9 @@ class ClassificationTrainer(Trainer):
             training_losses=training_losses,
             validation_losses=validation_losses,
             accuracies=accuracies,
+            # TODO: Remove training_cost
             training_costs=training_costs,
-            )
+        )
 
 
 class EvaluationMetric(ABC):

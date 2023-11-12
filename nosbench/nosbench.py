@@ -153,10 +153,8 @@ class NOSBench(BaseBenchmark):
         dataset = ScikitLearnDataset(dataset, StandardScaler())
         trainer = ClassificationTrainer()
         model_factory = MLPModelFactory(
-            len(dataset.feature_names),
-            dataset.n_classes,
-            self.backbone,
-            self.head)
+            len(dataset.feature_names), dataset.n_classes, self.backbone, self.head
+        )
         evaluation_metric = CrossValidation(n_splits=n_splits, batch_size=batch_size)
         pipeline = Pipeline(dataset, trainer, model_factory, evaluation_metric)
         path = os.path.join(path, self.get_identifier())
@@ -193,12 +191,12 @@ class NOSBench(BaseBenchmark):
         def read_int(string):
             i = takewhile(str.isnumeric, string)
             length = int(string[:i])
-            return int(string[i + 1: i + 1 + length]), string[i + 1 + length:]
+            return int(string[i + 1 : i + 1 + length]), string[i + 1 + length :]
 
         def read_array(string):
             i = takewhile(str.isnumeric, string)
             array_length = int(string[:i])
-            rest = string[i + 1:]
+            rest = string[i + 1 :]
             array = []
             for _ in range(array_length):
                 value, rest = read_int(rest)

@@ -3,7 +3,7 @@ import unittest
 import torch
 
 from nosbench.program import create_optimizer
-from nosbench.optimizers import SGD, AdamW, Adam, RMSprop, Adagrad
+from nosbench.optimizers import SGD, AdamW, Adam, RMSprop, Adagrad, Adadelta
 
 
 class TestOptimum(unittest.TestCase):
@@ -42,4 +42,9 @@ class TestOptimum(unittest.TestCase):
     def test_adagrad(self):
         ground_truth = self.train(torch.optim.Adagrad, lr=1e-2, eps=1e-8)
         loss = self.train(create_optimizer(Adagrad))
+        torch.testing.assert_close(ground_truth, loss)
+
+    def test_adadelta(self):
+        ground_truth = self.train(torch.optim.Adadelta, lr=1.0, eps=1e-6)
+        loss = self.train(create_optimizer(Adadelta))
         torch.testing.assert_close(ground_truth, loss)

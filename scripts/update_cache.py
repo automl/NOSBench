@@ -21,15 +21,15 @@ for run_path in path.rglob("*.run"):
     if int(run_path.stem) != h:
         new_path = (run_path.parent / str(h)).with_suffix(".run")
         run_path.rename(new_path)
+        print("{run_path.stem} -> {new_path.stem}")
 
 for metadata_path in path.rglob("metadata.json"):
-        metadata = {
-            "SGD": hash(SGD),
-            "Adam": hash(Adam),
-            "AdamW": hash(AdamW),
-            "RMSprop": hash(RMSprop),
-            "Adagrad": hash(Adagrad),
-        }
-        with open(metadata_path, "w") as f:
-            json.dump(metadata, f)
-
+    metadata = {
+        "SGD": hash(SGD),
+        "Adam": hash(Adam),
+        "AdamW": hash(AdamW),
+        "RMSprop": hash(RMSprop),
+        "Adagrad": hash(Adagrad),
+    }
+    with open(metadata_path, "w") as f:
+        json.dump(metadata, f)

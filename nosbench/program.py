@@ -58,7 +58,7 @@ class Program(list):
                 return -3
             elif torch.isnan(loss):
                 return -2
-            exp_avg = (loss.item() * 0.999 + exp_avg * 0.001)
+            exp_avg = loss.item() * 0.999 + exp_avg * 0.001
         return hash(exp_avg)
 
     def optimizer(self) -> Type[torch.optim.Optimizer]:
