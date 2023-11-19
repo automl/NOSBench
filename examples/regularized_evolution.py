@@ -76,13 +76,13 @@ class RE_NOS(RegularizedEvolution):
         self,
         population_size,
         tournament_size,
-        initial_program=nosbench.optimizers.AdamW,
-        benchmark_name="toy",
+        benchmark,
         benchmark_epochs=50,
+        initial_program=nosbench.optimizers.AdamW,
         rng=np.random.RandomState(),
         **kwargs,
     ):
-        self.benchmark = nosbench.create(benchmark_name)
+        self.benchmark = benchmark
         self.benchmark_epochs = benchmark_epochs
         self.initial_program = initial_program
         self.mutations = [
@@ -148,14 +148,21 @@ if __name__ == "__main__":
     parser.add_argument("--initial_program", type=str, default="AdamW")
     args = parser.parse_args()
 
-    initial_program = getattr(nosbench.optimizers, args.initial_program)
+    benchmark = nosbench.create(args.benchmark_name)
+
+    if args.initial_program == "random":
+        cs = benchmark.configspace(seed=args.seed)
+        config = cs.sample_configuration()
+        initial_program = benchmark.configuration_to_program(config)
+    else:
+        initial_program = getattr(nosbench.optimizers, args.initial_program)
 
     re = RE_NOS(
         args.population_size,
         args.tournament_size,
         rng=np.random.RandomState(args.seed),
         initial_program=initial_program,
-        benchmark_name=args.benchmark_name,
+        benchmark=benchmark,
         benchmark_epochs=args.benchmark_epochs,
     )
 

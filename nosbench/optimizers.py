@@ -1,6 +1,6 @@
 import torch
 
-from nosbench.program import Program, Instruction, Pointer, READONLY_REGION
+from nosbench.program import NamedProgram, Instruction, Pointer, READONLY_REGION
 from nosbench.function import interpolate, bias_correct, Function
 
 
@@ -32,7 +32,8 @@ u_hat = Pointer(READONLY_REGION + 6)
 u_hat_sqrt = Pointer(READONLY_REGION + 8)
 
 
-AdamW = Program(
+AdamW = NamedProgram(
+    "AdamW",
     [
         Instruction(Function(torch.square, 1), [g], g_square),
         Instruction(Function(torch.sub, 2), [Pointer(3), Pointer(5)], beta1),
@@ -48,11 +49,12 @@ AdamW = Program(
         Instruction(Function(torch.mul, 2), [w, weight_decay], wd),
         Instruction(Function(torch.add, 2), [update, wd], update),
         Instruction(Function(torch.mul, 2), [update, Pointer(7)], update),
-    ]
+    ],
 )
 
 
-Adam = Program(
+Adam = NamedProgram(
+    "Adam",
     [
         Instruction(Function(torch.square, 1), [g], g_square),
         Instruction(Function(torch.sub, 2), [Pointer(3), Pointer(5)], beta1),
@@ -66,32 +68,35 @@ Adam = Program(
         Instruction(Function(torch.add, 2), [v_hat_sqrt, eps], v_hat_sqrt),
         Instruction(Function(torch.div, 2), [m_hat, v_hat_sqrt], update),
         Instruction(Function(torch.mul, 2), [update, Pointer(7)], update),
-    ]
+    ],
 )
 
 
-SGD = Program(
+SGD = NamedProgram(
+    "SGD",
     [
         Instruction(Function(torch.sub, 2), [Pointer(5), Pointer(5)], momentum),
         Instruction(Function(torch.mul, 2), [m, momentum], m),
         Instruction(Function(torch.add, 2), [g, m], m),
         Instruction(Function(torch.mul, 2), [m, Pointer(6)], update),
-    ]
+    ],
 )
 
 
-SignSGD = Program(
+SignSGD = NamedProgram(
+    "SignSGD",
     [
         Instruction(Function(torch.sub, 2), [Pointer(5), Pointer(5)], momentum),
         Instruction(Function(torch.mul, 2), [m, momentum], m),
         Instruction(Function(torch.add, 2), [g, m], m),
         Instruction(Function(torch.sign, 1), [m], update),
         Instruction(Function(torch.mul, 2), [update, Pointer(6)], update),
-    ]
+    ],
 )
 
 
-RMSprop = Program(
+RMSprop = NamedProgram(
+    "RMSprop",
     [
         Instruction(Function(torch.sub, 2), [Pointer(3), Pointer(6)], alpha),
         Instruction(Function(torch.square, 1), [g], g_square),
@@ -101,11 +106,12 @@ RMSprop = Program(
         Instruction(Function(torch.add, 2), [v_sqrt, eps], v_sqrt),
         Instruction(Function(torch.div, 2), [g, v_sqrt], update),
         Instruction(Function(torch.mul, 2), [update, Pointer(6)], update),
-    ]
+    ],
 )
 
 
-Adagrad = Program(
+Adagrad = NamedProgram(
+    "Adagrad",
     [
         Instruction(Function(torch.square, 1), [g], g_square),
         Instruction(Function(torch.add, 2), [g_square, v], v),
@@ -114,11 +120,12 @@ Adagrad = Program(
         Instruction(Function(torch.add, 2), [v_sqrt, eps], v_sqrt),
         Instruction(Function(torch.div, 2), [g, v_sqrt], update),
         Instruction(Function(torch.mul, 2), [update, Pointer(6)], update),
-    ]
+    ],
 )
 
 
-HeroLion = Program(
+HeroLion = NamedProgram(
+    "HeroLion",
     [
         Instruction(Function(torch.sub, 2), [Pointer(3), Pointer(5)], beta1),
         Instruction(Function(torch.sub, 2), [Pointer(3), Pointer(7)], beta2),
@@ -129,11 +136,12 @@ HeroLion = Program(
         Instruction(Function(torch.mul, 2), [w, weight_decay], wd),
         Instruction(Function(torch.add, 2), [update, wd], update),
         Instruction(Function(torch.mul, 2), [update, Pointer(7)], update),
-    ]
+    ],
 )
 
 
-Adadelta = Program(
+Adadelta = NamedProgram(
+    "Adadelta",
     [
         Instruction(Function(torch.square, 1), [g], g_square),
         Instruction(Function(torch.sub, 2), [Pointer(3), Pointer(5)], rho),
@@ -147,11 +155,12 @@ Adadelta = Program(
         Instruction(Function(torch.square, 1), [update], update_square),
         Instruction(Function(interpolate, 3), [u, update_square, rho], u),
         Instruction(Function(torch.mul, 2), [update, Pointer(3)], update),
-    ]
+    ],
 )
 
 
-PowerSign = Program(
+PowerSign = NamedProgram(
+    "PowerSign",
     [
         Instruction(Function(torch.sub, 2), [Pointer(3), Pointer(6)], alpha),
         Instruction(Function(interpolate, 3), [m, g, alpha], m),
@@ -161,11 +170,12 @@ PowerSign = Program(
         Instruction(Function(torch.exp, 1), [update], update),
         Instruction(Function(torch.mul, 2), [update, g], update),
         Instruction(Function(torch.mul, 2), [update, Pointer(7)], update),
-    ]
+    ],
 )
 
 
-AddSign = Program(
+AddSign = NamedProgram(
+    "AddSign",
     [
         Instruction(Function(torch.sub, 2), [Pointer(3), Pointer(6)], alpha),
         Instruction(Function(interpolate, 3), [m, g, alpha], m),
@@ -175,5 +185,5 @@ AddSign = Program(
         Instruction(Function(torch.add, 2), [update, Pointer(3)], update),
         Instruction(Function(torch.mul, 2), [update, g], update),
         Instruction(Function(torch.mul, 2), [update, Pointer(7)], update),
-    ]
+    ],
 )

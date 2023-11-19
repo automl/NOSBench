@@ -18,11 +18,12 @@ if __name__ == "__main__":
     parser.add_argument("--benchmark_name", type=str, default="toy")
     parser.add_argument("--benchmark_epochs", type=int, default=50)
     parser.add_argument("--seed", type=int, default=123)
+    parser.add_argument("--device", type=str, default="cpu")
     parser.add_argument("--evaluations", type=int, default=100000)
     parser.add_argument("--save_every", type=int, default=100)
     args = parser.parse_args()
 
-    benchmark = nosbench.create(args.benchmark_name)
+    benchmark = nosbench.create(args.benchmark_name, device=args.device)
 
     cs = benchmark.configspace(seed=args.seed)
     history = []

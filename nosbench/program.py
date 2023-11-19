@@ -3,12 +3,14 @@ from dataclasses import dataclass
 from itertools import chain
 from functools import cached_property
 import copy
+from collections import defaultdict
+import weakref
 
 import sklearn.datasets
 import torch
 
-
 from nosbench.utils import deterministic
+from nosbench.device import Device
 
 
 Pointer = NewType("Pointer", int)
@@ -18,6 +20,19 @@ READONLY_REGION = 8
 
 
 class Program(list):
+    __refs__: dict[str, list[Type[Program]]] = defaultdict(list)
+
+    def __init__(self, *args, **kwargs):
+        self.__refs__[self.__class__].append(weakref.ref(self))
+        super().__init__(*args, **kwargs)
+
+    @classmethod
+    def get_instances(cls):
+        for inst_ref in cls.__refs__[cls]:
+            inst = inst_ref()
+            if inst is not None:
+                yield inst
+
     @staticmethod
     def _sphere(data):
         return torch.sum(data**2)
@@ -38,6 +53,9 @@ class Program(list):
 
     @deterministic(seed=42)
     def __hash__(self):
+        device = Device.get()
+        # Always calculate hashes in CPU
+        Device.set("cpu")
         data, target = self.dataset
         model = torch.nn.Sequential(
             torch.nn.Linear(4, 8),
@@ -59,10 +77,17 @@ class Program(list):
             elif torch.isnan(loss):
                 return -2
             exp_avg = loss.item() * 0.999 + exp_avg * 0.001
+        Device.set(device)
         return hash(exp_avg)
 
     def optimizer(self) -> Type[torch.optim.Optimizer]:
         return create_optimizer(self)
+
+
+class NamedProgram(Program):
+    def __init__(self, name, *args, **kwargs):
+        self.name = name
+        super().__init__(*args, **kwargs)
 
 
 @dataclass
@@ -73,7 +98,8 @@ class Instruction:
     output: Pointer
 
     def execute(self, memory):
-        output = self.op([memory[inp] for inp in self.inputs])
+        device = Device.get()
+        output = self.op([memory[inp].to(device) for inp in self.inputs])
         memory[self.output].data = output.data
         return output
 
@@ -97,16 +123,18 @@ class _TensorMemory(list):
         if idx < self.__len__():
             return list.__getitem__(self, idx)
         else:
+            device = Device.get()
             while not self.__len__() > idx:
-                self.append(torch.tensor(0.0))
+                self.append(torch.tensor(0.0, device=device))
             return self[idx]
 
     def __setitem__(self, idx, value):
         if idx < self.__len__():
             return list.__setitem__(self, idx, value)
         else:
+            device = Device.get()
             while not self.__len__() > idx:
-                self.append(torch.tensor(0.0))
+                self.append(torch.tensor(0.0, device=device))
             self[idx] = value
 
 
@@ -134,25 +162,26 @@ def create_optimizer(program):
             if closure is not None:
                 with torch.enable_grad():
                     loss = closure()
+            device = Device.get()
             for group_id, group in enumerate(self.param_groups):
                 for param_id, p in enumerate(group["params"]):
                     if p.grad is not None:
                         state = self.state[p]
                         if len(state) == 0:
                             # Initialize vector memory
-                            state["step"] = torch.tensor(0.0)
+                            state["step"] = torch.tensor(0.0, device=device)
                             self.memory[p] = _TensorMemory()
                             state["memory"] = self.memory[p]
 
                         self.memory[p][0] = p
                         self.memory[p][1] = p.grad
                         self.memory[p][2] = state["step"]
-                        self.memory[p][3] = torch.tensor(1.0)
-                        self.memory[p][4] = torch.tensor(0.5)
-                        self.memory[p][5] = torch.tensor(1e-01)
-                        self.memory[p][6] = torch.tensor(1e-02)
-                        self.memory[p][7] = torch.tensor(1e-03)
-                        self.memory[p][8] = torch.tensor(1e-06)
+                        self.memory[p][3] = torch.tensor(1.0, device=device)
+                        self.memory[p][4] = torch.tensor(0.5, device=device)
+                        self.memory[p][5] = torch.tensor(1e-01, device=device)
+                        self.memory[p][6] = torch.tensor(1e-02, device=device)
+                        self.memory[p][7] = torch.tensor(1e-03, device=device)
+                        self.memory[p][8] = torch.tensor(1e-06, device=device)
 
                         state["step"] += 1
 

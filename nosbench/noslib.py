@@ -1,15 +1,28 @@
 import pathlib
 import json
 from itertools import zip_longest
+import pickle
+from dataclasses import dataclass
 
 from filelock import FileLock
 import torch
 
 from nosbench.optimizers import SGD, Adam, AdamW, RMSprop, Adagrad
+from nosbench.pipeline import Result
+from nosbench.program import Program
+from nosbench.device import Device
+
+
+@dataclass
+class Run:
+    program: Program
+    epochs: int
+    results: list[Result]
 
 
 class NOSLib:
-    def __init__(self, pipeline, path="cache"):
+    def __init__(self, pipeline, path="cache", device="cpu"):
+        self.device = device
         self.path = pathlib.Path(path)
         self.lock_path = ".lock" / self.path
         self.path.mkdir(parents=True, exist_ok=True)
@@ -51,40 +64,45 @@ class NOSLib:
             self._exists.add(int(run.stem))
         self.pipeline = pipeline
 
-    def query(self, program, epoch, return_state=False):
+    def query(self, program, epoch, return_run=False):
+        Device.set(self.device)
         stem = hash(program)
         path = (self.path / str(stem)).with_suffix(".run")
         lock = FileLock((self.lock_path / str(stem)).with_suffix(".lock"))
         with lock.acquire():
             if stem in self._exists or path.exists():
-                state_dict = torch.load(path)
+                with path.open("rb") as f:
+                    run = pickle.load(f)
             else:
-                state_dict = {
-                    "program": program,
-                    "n_epochs": 0,
-                    "stats": [],
-                    "states": [],
-                }
-            if epoch >= state_dict["n_epochs"]:
-                stats, states = self.pipeline.evaluate(
-                    state_dict["program"],
-                    epoch - state_dict["n_epochs"] + 1,
-                    state_dict["states"],
+                run = Run(
+                    program=program,
+                    epochs=0,
+                    results=[],
                 )
-                fillvalue = stats[0].empty_like()
-                concat_stats = []
-                for s1, s2 in zip_longest(
-                    state_dict["stats"], stats, fillvalue=fillvalue
-                ):
-                    concat_stats.append(s1.concat(s2))
+            if epoch >= run.epochs:
+                state_path = (self.path / str(stem)).with_suffix(".states")
+                states = []
+                if run.epochs > 0:
+                    states = torch.load(state_path)
 
-                state_dict["states"] = states
-                state_dict["n_epochs"] = epoch + 1
-                state_dict["stats"] = concat_stats
+                results, states = self.pipeline.evaluate(
+                    run.program,
+                    epoch - run.epochs + 1,
+                    states,
+                )
+                fillvalue = results[0].empty_like()
+                concat_results = []
+                for s1, s2 in zip_longest(run.results, results, fillvalue=fillvalue):
+                    concat_results.append(s1.concat(s2))
 
-                torch.save(state_dict, path)
+                run.epochs = epoch + 1
+                run.results = concat_results
+
+                with path.open("wb") as f:
+                    pickle.dump(run, f)
+                torch.save(states, state_path)
                 self._exists.add(stem)
-        loss = self.pipeline.evaluation_metric.evaluate(state_dict["stats"], epoch)
-        if return_state:
-            return loss, state_dict
+        loss = self.pipeline.evaluation_metric.evaluate(run.results, epoch)
+        if return_run:
+            return loss, run
         return loss

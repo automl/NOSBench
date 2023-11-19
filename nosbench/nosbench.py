@@ -107,12 +107,12 @@ class BaseBenchmark(NOSLib):
         raise NotImplementedError
 
     @classmethod
-    def from_identifier(cls, identifier, path):
+    def from_identifier(cls, identifier, path, device):
         raise NotImplementedError
 
 
 class ToyBenchmark(BaseBenchmark):
-    def __init__(self, path="cache"):
+    def __init__(self, path="cache", device="cpu"):
         iris = sklearn.datasets.load_iris()
         dataset = ScikitLearnDataset(iris, StandardScaler())
         trainer = ClassificationTrainer()
@@ -121,14 +121,14 @@ class ToyBenchmark(BaseBenchmark):
         evaluation_metric = TrainValidationSplit(training_percentage=0.8, batch_size=-1)
         pipeline = Pipeline(dataset, trainer, model_factory, evaluation_metric)
         path = os.path.join(path, "toy")
-        super().__init__(pipeline=pipeline, path=path)
+        super().__init__(pipeline=pipeline, path=path, device=device)
 
     def get_identifier(self):
         return "toy"
 
     @classmethod
-    def from_identifier(cls, identifier, path="cache"):
-        return cls(path=path)
+    def from_identifier(cls, identifier, path="cache", device="cpu"):
+        return cls(path=path, device=device)
 
 
 class NOSBench(BaseBenchmark):
@@ -141,6 +141,7 @@ class NOSBench(BaseBenchmark):
         head=[128],
         path="cache",
         data_home=None,
+        device="cpu",
     ):
         self.data_id = data_id
         self.n_splits = n_splits
@@ -148,7 +149,7 @@ class NOSBench(BaseBenchmark):
         self.backbone = backbone
         self.head = head
         dataset = sklearn.datasets.fetch_openml(
-            data_id=data_id, data_home=data_home, as_frame=False
+            data_id=data_id, data_home=data_home, as_frame=False, parser="liac-arff"
         )
         dataset = ScikitLearnDataset(dataset, StandardScaler())
         trainer = ClassificationTrainer()
@@ -158,7 +159,7 @@ class NOSBench(BaseBenchmark):
         evaluation_metric = CrossValidation(n_splits=n_splits, batch_size=batch_size)
         pipeline = Pipeline(dataset, trainer, model_factory, evaluation_metric)
         path = os.path.join(path, self.get_identifier())
-        super().__init__(pipeline=pipeline, path=path)
+        super().__init__(pipeline=pipeline, path=path, device=device)
 
     def get_identifier(self):
         chars = cycle("nosbench")
@@ -181,7 +182,7 @@ class NOSBench(BaseBenchmark):
         return identifier
 
     @classmethod
-    def from_identifier(cls, identifier, path="cache"):
+    def from_identifier(cls, identifier, path="cache", device="cpu"):
         def takewhile(predicate, string):
             i = 0
             while predicate(string[i]):
@@ -216,6 +217,7 @@ class NOSBench(BaseBenchmark):
             backbone=backbone,
             head=head,
             path=path,
+            device=device,
         )
 
     def __str__(self):

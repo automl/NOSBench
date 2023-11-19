@@ -2,7 +2,6 @@ import time
 from abc import abstractmethod, ABC
 from itertools import count, zip_longest
 from collections import defaultdict
-from functools import wraps
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -15,6 +14,7 @@ import sklearn.model_selection
 import sklearn.datasets
 
 from nosbench.utils import deterministic
+from nosbench.device import Device
 
 
 class ScikitLearnDataset(Dataset):
@@ -81,6 +81,7 @@ class ClassificationTrainer(Trainer):
 
     @deterministic(seed=42)
     def train(self, model, optimizer, train_loader, val_loader, epochs):
+        device = Device.get()
         training_losses = []
         validation_losses = []
         accuracies = []
@@ -90,6 +91,8 @@ class ClassificationTrainer(Trainer):
             minibatch_losses = []
             prev_time = time.monotonic()
             for data, target in train_loader:
+                data = data.to(device)
+                target = target.to(device)
                 loss = nn.functional.nll_loss(
                     model(data), target, weight=self.target_weights
                 )
@@ -106,6 +109,8 @@ class ClassificationTrainer(Trainer):
             size = 0
             with torch.no_grad():
                 for data, target in val_loader:
+                    data = data.to(device)
+                    target = target.to(device)
                     output = model(data)
                     loss = nn.functional.nll_loss(output, target, reduction="sum")
                     validation_loss += loss.item()
@@ -129,8 +134,8 @@ class EvaluationMetric(ABC):
         """Yield training and validation data loader generator"""
 
     @abstractmethod
-    def evaluate(self, stats, epoch):
-        """Calculate final evaluation result from stats"""
+    def evaluate(self, results, epoch):
+        """Calculate final evaluation result from results"""
 
 
 @dataclass
@@ -151,8 +156,8 @@ class TrainValidationSplit(EvaluationMetric):
         val_loader = DataLoader(val, batch_size=len(val))
         yield train_loader, val_loader
 
-    def evaluate(self, stats, epoch):
-        return stats[0].validation_losses[epoch]
+    def evaluate(self, results, epoch):
+        return results[0].validation_losses[epoch]
 
 
 @dataclass
@@ -165,6 +170,7 @@ class CrossValidation(EvaluationMetric):
         splits = sklearn.model_selection.KFold(
             n_splits=self.n_splits, shuffle=True, random_state=np.random.RandomState(42)
         ).split(dataset)
+
         for train_split, val_split in splits:
             train_sampler = torch.utils.data.SubsetRandomSampler(train_split)
             val_sampler = torch.utils.data.SubsetRandomSampler(val_split)
@@ -179,11 +185,11 @@ class CrossValidation(EvaluationMetric):
             )
             yield train_loader, val_loader
 
-    def evaluate(self, stats, epoch):
+    def evaluate(self, results, epoch):
         validation_loss = 0.0
-        for stat in stats:
-            validation_loss += stat.validation_losses[epoch]
-        return validation_loss / len(stats)
+        for result in results:
+            validation_loss += result.validation_losses[epoch]
+        return validation_loss / len(results)
 
 
 class ModelFactory(ABC):
@@ -273,23 +279,24 @@ class Pipeline:
 
     @deterministic(seed=42)
     def evaluate(self, program, epochs, states=[]):
-        stats = []
+        device = Device.get()
+        results = []
         new_states = []
         for (train, val), state in zip_longest(
             self.evaluation_metric.evaluations(self.dataset), states
         ):
-            model = self.model_factory.create_model()
+            model = self.model_factory.create_model().to(device)
             optimizer_class = program.optimizer()
             optimizer = optimizer_class(model.parameters())
             if state is not None:
                 model.load_state_dict(state["model"])
                 optimizer.load_state_dict(state["optimizer"])
             result = self.trainer.train(model, optimizer, train, val, epochs)
-            stats.append(result)
+            results.append(result)
             new_states.append(
                 {
                     "model": model.state_dict(),
                     "optimizer": optimizer.state_dict(),
                 }
             )
-        return stats, new_states
+        return results, new_states
