@@ -12,7 +12,6 @@ import torch
 from nosbench.utils import deterministic
 from nosbench.device import Device
 
-
 Pointer = NewType("Pointer", int)
 
 
@@ -20,7 +19,7 @@ READONLY_REGION = 8
 
 
 class Program(list):
-    __refs__: dict[str, list[Type[Program]]] = defaultdict(list)
+    __refs__: dict[str, list[Type["Program"]]] = defaultdict(list)
 
     def __init__(self, *args, **kwargs):
         self.__refs__[self.__class__].append(weakref.ref(self))

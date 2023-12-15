@@ -15,6 +15,7 @@ _Element = namedtuple("_Element", "cls fitness")
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--output_path", type=str, default="results")
+    parser.add_argument("--cache_path", type=str, default="cache")
     parser.add_argument("--benchmark_name", type=str, default="toy")
     parser.add_argument("--benchmark_epochs", type=int, default=50)
     parser.add_argument("--seed", type=int, default=123)
@@ -23,7 +24,7 @@ if __name__ == "__main__":
     parser.add_argument("--save_every", type=int, default=100)
     args = parser.parse_args()
 
-    benchmark = nosbench.create(args.benchmark_name, device=args.device)
+    benchmark = nosbench.create(args.benchmark_name, path=args.cache_path, device=args.device)
 
     cs = benchmark.configspace(seed=args.seed)
     history = []
@@ -48,6 +49,7 @@ if __name__ == "__main__":
             with open(path / f"{timestr}-{hash(dump)}.pickle", "wb") as f:
                 pickle.dump(history, f)
 
+    print(f"Number of Queries: {benchmark.stats.n_queries}, Hits: {benchmark.stats.hits}, NaNs: {benchmark.stats.nans}, Infs: {benchmark.stats.infs}")
     x = max(history, key=lambda x: x.fitness)
     print("Incumbent optimizer:")
     pprint.pprint(x.cls)

@@ -17,12 +17,12 @@ def register(name, identifier, entry_point):
 def create(name, path="cache", **kwargs):
     spec = registry[name]
     if callable(spec.entry_point):
-        return spec.entry_point.from_identifier(spec.identifier, **kwargs)
+        return spec.entry_point.from_identifier(spec.identifier, path=path, **kwargs)
     else:
         module_name, benchmark = name.split(":")
         module = importlib.import_module(module_name)
         cls = getattr(module, benchmark)
-        return cls.from_identifier(spec.identifier, **kwargs)
+        return cls.from_identifier(spec.identifier, path=path, **kwargs)
 
 
 register("toy", "toy", ToyBenchmark)

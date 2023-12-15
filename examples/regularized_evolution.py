@@ -138,6 +138,7 @@ class ProgramArgparseAction(argparse.Action):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--output_path", type=str, default="results")
+    parser.add_argument("--cache_path", type=str, default="cache")
     parser.add_argument("--benchmark_name", type=str, default="toy")
     parser.add_argument("--benchmark_epochs", type=int, default=50)
     parser.add_argument("--seed", type=int, default=123)
@@ -148,7 +149,7 @@ if __name__ == "__main__":
     parser.add_argument("--initial_program", type=str, default="AdamW")
     args = parser.parse_args()
 
-    benchmark = nosbench.create(args.benchmark_name)
+    benchmark = nosbench.create(args.benchmark_name, path=args.cache_path)
 
     if args.initial_program == "random":
         cs = benchmark.configspace(seed=args.seed)
@@ -183,6 +184,7 @@ if __name__ == "__main__":
             with open(path / f"{timestr}-{hash(dump)}.pickle", "wb") as f:
                 pickle.dump(re.history, f)
 
+    print(f"Number of Queries: {benchmark.stats.n_queries}, Hits: {benchmark.stats.hits}")
     x = max(re.history, key=lambda x: x.fitness)
     print("Incumbent optimizer:")
     pprint.pprint(x.cls)

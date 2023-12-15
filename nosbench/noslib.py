@@ -20,9 +20,17 @@ class Run:
     results: list[Result]
 
 
+class Statistics:
+    hits: int = 0
+    n_queries: int = 0
+    nans: int = 0
+    infs: int = 0
+
+
 class NOSLib:
     def __init__(self, pipeline, path="cache", device="cpu"):
         self.device = device
+        self.stats = Statistics()
         self.path = pathlib.Path(path)
         self.lock_path = ".lock" / self.path
         self.path.mkdir(parents=True, exist_ok=True)
@@ -65,12 +73,18 @@ class NOSLib:
         self.pipeline = pipeline
 
     def query(self, program, epoch, return_run=False):
+        self.stats.n_queries += 1
         Device.set(self.device)
         stem = hash(program)
+        if stem == -3:
+            self.stats.infs += 1
+        elif stem == -2:
+            self.stats.nans += 1
         path = (self.path / str(stem)).with_suffix(".run")
         lock = FileLock((self.lock_path / str(stem)).with_suffix(".lock"))
         with lock.acquire():
             if stem in self._exists or path.exists():
+                self.stats.hits += 1
                 with path.open("rb") as f:
                     run = pickle.load(f)
             else:
