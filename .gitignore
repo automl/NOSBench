@@ -1,3 +1,10 @@
 __pycache__
-cache
+*cache*
 thesis
+.lock
+*.png
+*experiment*
+*.txt
+dev
+extra
+results

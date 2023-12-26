@@ -30,6 +30,7 @@ class Statistics:
 class NOSLib:
     def __init__(self, pipeline, path="cache", device="cpu"):
         self.device = device
+        Device.set(self.device)
         self.stats = Statistics()
         self.path = pathlib.Path(path)
         self.lock_path = ".lock" / self.path
@@ -72,7 +73,7 @@ class NOSLib:
             self._exists.add(int(run.stem))
         self.pipeline = pipeline
 
-    def query(self, program, epoch, return_run=False):
+    def query(self, program, epoch, return_run=False, skip_cache=False):
         self.stats.n_queries += 1
         Device.set(self.device)
         stem = hash(program)
@@ -83,7 +84,7 @@ class NOSLib:
         path = (self.path / str(stem)).with_suffix(".run")
         lock = FileLock((self.lock_path / str(stem)).with_suffix(".lock"))
         with lock.acquire():
-            if stem in self._exists or path.exists():
+            if not skip_cache and stem in self._exists or path.exists():
                 self.stats.hits += 1
                 with path.open("rb") as f:
                     run = pickle.load(f)
@@ -112,10 +113,11 @@ class NOSLib:
                 run.epochs = epoch + 1
                 run.results = concat_results
 
-                with path.open("wb") as f:
-                    pickle.dump(run, f)
-                torch.save(states, state_path)
-                self._exists.add(stem)
+                if not skip_cache:
+                    with path.open("wb") as f:
+                        pickle.dump(run, f)
+                    torch.save(states, state_path)
+                    self._exists.add(stem)
         loss = self.pipeline.evaluation_metric.evaluate(run.results, epoch)
         if return_run:
             return loss, run

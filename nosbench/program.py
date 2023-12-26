@@ -32,51 +32,39 @@ class Program(list):
             if inst is not None:
                 yield inst
 
-    @staticmethod
-    def _sphere(data):
-        return torch.sum(data**2)
-
-    @staticmethod
-    def _rosenbrock(data):
-        return torch.sum(100 * (data[1:] - data[:-1] ** 2) ** 2 + (1 - data[:-1]) ** 2)
-
-    @cached_property
-    def dataset(self):
-        dataset = sklearn.datasets.load_iris()
-        data = torch.from_numpy(dataset.data).float()
-        target = torch.from_numpy(dataset.target).long()
-        return data, target
-
     def __eq__(self, other):
         return hash(self) == hash(other)
 
     @deterministic(seed=42)
     def __hash__(self):
         device = Device.get()
-        # Always calculate hashes in CPU
         Device.set("cpu")
-        data, target = self.dataset
-        model = torch.nn.Sequential(
-            torch.nn.Linear(4, 8),
-            torch.nn.Linear(8, 3),
-            torch.nn.LogSoftmax(-1),
-        )
-        optimizer_class = self.optimizer()
-        optimizer = optimizer_class(model.parameters())
+        dim = 10
+        a = torch.normal(torch.zeros(dim, dim), torch.ones(dim, dim) * 1e-1)
+        b = torch.normal(torch.zeros(dim), torch.ones(dim) * 1e-1)
+        x = torch.normal(torch.zeros(dim), torch.ones(dim) * 1e-1)
+        y = -torch.ones(dim) / 2.0
+        x.requires_grad_()
 
-        loss = torch.nn.functional.nll_loss(model(data), target)
-        exp_avg = loss.item()
-        for _ in range(10):
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-            loss = torch.nn.functional.nll_loss(model(data), target)
-            if torch.isinf(loss):
-                return -3
-            elif torch.isnan(loss):
-                return -2
-            exp_avg = loss.item() * 0.999 + exp_avg * 0.001
-        Device.set(device)
+        optimizer_class = self.optimizer()
+        optimizer = optimizer_class([x])
+
+        exp_avg = 0.0
+        try:
+            for _ in range(10):
+                z = x @ a + b
+                yhat = z**2 / (z**2 + 1.0)
+                loss = torch.nn.functional.l1_loss(yhat, y)
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+                if torch.isinf(loss):
+                    return -3
+                elif torch.isnan(loss):
+                    return -2
+                exp_avg = loss.item() * 0.1 + exp_avg * 0.9
+        finally:
+            Device.set(device)
         return hash(exp_avg)
 
     def optimizer(self) -> Type[torch.optim.Optimizer]:
