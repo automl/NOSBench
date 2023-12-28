@@ -8,13 +8,21 @@ from sklearn.preprocessing import StandardScaler
 
 from nosbench.noslib import NOSLib
 from nosbench.optimizers import AdamW
-from nosbench.pipeline import Pipeline, ClassificationTrainer, ScikitLearnDataset
-from nosbench.pipeline import ToyMLPModelFactory, MLPModelFactory
+from nosbench.pipeline import (
+    Pipeline,
+    ClassificationTrainer,
+    PFNTrainer,
+    ScikitLearnDataset,
+    RidgeRegressionDataset,
+)
+from nosbench.utils import deterministic
+from nosbench.pipeline import ToyMLPModelFactory, MLPModelFactory, PFNModelFactory
 from nosbench.pipeline import TrainValidationSplit, CrossValidation
-
 from nosbench.function import interpolate, bias_correct, clip, size
 from nosbench.function import Function
 from nosbench.program import Program, Instruction, READONLY_REGION
+from nosbench.pfns.bar_distribution import FullSupportBarDistribution, get_bucket_limits
+from nosbench.pfns.utils import sample_from_prior
 
 
 class BaseBenchmark(NOSLib):
@@ -103,6 +111,7 @@ class BaseBenchmark(NOSLib):
             program.append(instruction)
         return program
 
+    # TODO: Implement this properly
     def get_identifier(self):
         raise NotImplementedError
 
@@ -131,7 +140,7 @@ class ToyBenchmark(BaseBenchmark):
         return cls(path=path, device=device)
 
 
-class NOSBench(BaseBenchmark):
+class NOSMLPBench(BaseBenchmark):
     def __init__(
         self,
         data_id=31,
@@ -229,3 +238,42 @@ class NOSBench(BaseBenchmark):
             f"backbone: {self.backbone}\n"
             f"head: {self.head}\n"
         )
+
+
+class NOSBench(BaseBenchmark):
+    @deterministic(seed=42)
+    def __init__(self, path="cache", device="cpu"):
+        num_features = 1
+        seq_len = 20
+        steps_per_epoch = 100
+        batch_size = 8
+        training_percentage = 0.8
+        dataset_size = int(steps_per_epoch * batch_size / training_percentage)
+
+        _, y = sample_from_prior(100000, seq_len, num_features)
+        limits = get_bucket_limits(num_outputs=100, ys=y.transpose(0, 1).to(device))
+        criterion = FullSupportBarDistribution(limits)
+
+        model_factory = PFNModelFactory(
+            ninp=256,
+            nout=criterion.num_bars,
+            nhead=4,
+            nhid=512,
+            nlayers=4,
+            num_features=num_features,
+        )
+        dataset = RidgeRegressionDataset(
+            dataset_size=dataset_size, batch_size=batch_size, seq_len=seq_len, num_features=num_features
+        )
+        trainer = PFNTrainer(criterion)
+        evaluation_metric = TrainValidationSplit(training_percentage=training_percentage, batch_size=1)
+        pipeline = Pipeline(dataset, trainer, model_factory, evaluation_metric)
+        path = os.path.join(path, self.get_identifier())
+        super().__init__(pipeline=pipeline, path=path, device=device)
+
+    def get_identifier(self):
+        return "pfn"
+
+    @classmethod
+    def from_identifier(cls, identifier, path="cache", device="cpu"):
+        return cls(path=path, device=device)

@@ -15,6 +15,8 @@ import sklearn.datasets
 
 from nosbench.utils import deterministic
 from nosbench.device import Device
+from nosbench.pfns.model import PFNModel
+from nosbench.pfns.utils import sample_from_prior, torch_nanmean
 
 
 class ScikitLearnDataset(Dataset):
@@ -39,6 +41,23 @@ class ScikitLearnDataset(Dataset):
 
     def __len__(self):
         return len(self.target)
+
+
+class RidgeRegressionDataset(Dataset):
+    @deterministic(seed=42)
+    def __init__(self, dataset_size, batch_size=1, seq_len=100, num_features=1):
+        self.dataset_size = dataset_size
+        self.batch_size = batch_size
+        self.dataset = []
+        for i in range(dataset_size//batch_size):
+            data = sample_from_prior(batch_size=batch_size, seq_len=seq_len, num_features=num_features)
+            self.dataset.append(data)
+
+    def __getitem__(self, i):
+        return self.dataset[i]
+
+    def __len__(self):
+        return self.dataset_size // self.batch_size
 
 
 class Result(ABC):
@@ -69,6 +88,17 @@ class ClassificationResult(Result):
             self.training_costs + other_costs,
         )
 
+@dataclass(frozen=True)
+class PFNResult(Result):
+    training_losses: list = field(default_factory=list)
+    validation_losses: list = field(default_factory=list)
+
+    def concat(self, other):
+        return PFNResult(
+            self.training_losses + other.training_losses,
+            self.validation_losses + other.validation_losses,
+        )
+
 
 class Trainer(ABC):
     @abstractmethod
@@ -76,6 +106,7 @@ class Trainer(ABC):
         """Train and validate given model on train/val for epochs"""
 
 
+@dataclass
 class ClassificationTrainer(Trainer):
     target_weights: Optional[float] = None
 
@@ -125,6 +156,64 @@ class ClassificationTrainer(Trainer):
             accuracies=accuracies,
             # TODO: Remove training_cost
             training_costs=training_costs,
+        )
+
+
+@dataclass
+class PFNTrainer(Trainer):
+    criterion: callable
+
+    @deterministic(seed=42)
+    def train(self, model, optimizer, train_loader, val_loader, epochs):
+        device = Device.get()
+        training_losses = []
+        validation_losses = []
+        confidances = []
+        for epoch in range(epochs):
+            minibatch_losses = []
+            prev_time = time.monotonic()
+            total_loss = 0.0
+            for x, y in train_loader:
+                x, y = x.squeeze(0), y.squeeze(0)
+                seq_len = x.shape[1]
+                single_eval_pos = torch.randint(seq_len, []).numpy()
+                y = y.transpose(0, 1).to(device)
+                logits = model((x.transpose(0, 1).to(device), y), single_eval_pos=single_eval_pos)[
+                    "standard"
+                ]
+                targets = y[single_eval_pos:]
+                losses = self.criterion(logits, targets)
+                losses = losses.view(-1, logits.shape[1])
+                loss, nan_share = torch_nanmean(losses.mean(0), return_nanshare=True)
+
+                loss.backward()
+                nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                optimizer.step()
+                optimizer.zero_grad()
+                minibatch_losses.append(loss.item())
+            training_losses.append(minibatch_losses)
+
+            validation_loss = 0.0
+            size = 0
+            num_training_points = 4
+            with torch.no_grad():
+                for x, y in val_loader:
+                    x = x.flatten(0, 1).transpose(0, 1).to(device)
+                    y = y.flatten(0, 1).transpose(0, 1).to(device)
+                    logits = model((x, y), single_eval_pos=num_training_points)[
+                        "standard"
+                    ]
+                    targets = y[num_training_points:]
+                    losses = self.criterion(logits, targets)
+                    losses = losses.view(-1, logits.shape[1])
+                    loss = losses.sum()
+                    validation_loss += loss.cpu().item()
+                    size += x.shape[1]
+                validation_losses.append(validation_loss / size)
+
+        return PFNResult(
+            training_losses=training_losses,
+            validation_losses=validation_losses,
         )
 
 
@@ -215,6 +304,29 @@ class ToyMLPModelFactory(ModelFactory):
         module_list.append(nn.Linear(prev_layer, self.n_classes))
         module_list.append(nn.LogSoftmax(-1))
         return nn.Sequential(*module_list)
+
+
+@dataclass
+class PFNModelFactory(ModelFactory):
+    ninp: int
+    nout: int
+    nhead: int
+    nhid: int
+    nlayers: int
+    num_features: int
+    dropout: int = 0.0
+
+    @deterministic(seed=42)
+    def create_model(self):
+        return PFNModel(
+            ninp=self.ninp,
+            nout=self.nout,
+            nhead=self.nhead,
+            nhid=self.nhid,
+            nlayers=self.nlayers,
+            num_features=self.num_features,
+            dropout=self.dropout,
+        )
 
 
 class _Linear(nn.Linear):

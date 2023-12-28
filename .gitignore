@@ -3,7 +3,6 @@ __pycache__
 thesis
 .lock
 *.png
-*experiment*
 *.txt
 dev
 extra
