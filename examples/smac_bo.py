@@ -20,11 +20,13 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--output_path", type=str, default="results")
 parser.add_argument("--benchmark_name", type=str, default="toy")
 parser.add_argument("--benchmark_epochs", type=int, default=50)
+parser.add_argument("--cache_path", type=str, default="cache")
 parser.add_argument("--seed", type=int, default=123)
 parser.add_argument("--evaluations", type=int, default=100000)
+parser.add_argument("--device", type=str, default="cpu")
 args = parser.parse_args()
 
-benchmark = nosbench.create(args.benchmark_name)
+benchmark = nosbench.create(args.benchmark_name, path=args.cache_path, device=args.device)
 
 timestr = time.strftime("%Y-%m-%d")
 settings = {"search_algorithm": "SMAC_BO", "args": vars(args)}
