@@ -79,8 +79,16 @@ class NOSLib:
         stem = hash(program)
         if stem == -3:
             self.stats.infs += 1
+            if not skip_cache:
+                if return_run:
+                    return torch.inf, None
+                return torch.inf
         elif stem == -2:
             self.stats.nans += 1
+            if not skip_cache:
+                if return_run:
+                    return torch.nan, None
+                return torch.nan
         path = (self.path / str(stem)).with_suffix(".run")
         lock = FileLock((self.lock_path / str(stem)).with_suffix(".lock"))
         with lock.acquire():

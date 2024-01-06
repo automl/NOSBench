@@ -53,6 +53,7 @@ class RidgeRegressionDataset(Dataset):
         dataset_size = self.dataset_size
         seq_len = self.seq_len
         num_features = self.num_features
+
         class RidgeRegressionDataLoader(DataLoader):
             def __init__(self):
                 self.epoch = 0
@@ -60,7 +61,9 @@ class RidgeRegressionDataset(Dataset):
             def __iter__(self):
                 size = dataset_size // batch_size
                 for i in range(size):
-                    f = deterministic(size * (start_epoch + self.epoch) + i)(sample_from_prior)
+                    f = deterministic(size * (start_epoch + self.epoch) + i)(
+                        sample_from_prior
+                    )
                     yield f(batch_size, seq_len, num_features)
 
             def step(self):
@@ -100,6 +103,7 @@ class ClassificationResult(Result):
             self.accuracies + other.accuracies,
             self.training_costs + other_costs,
         )
+
 
 @dataclass(frozen=True)
 class PFNResult(Result):
@@ -188,9 +192,9 @@ class PFNTrainer(Trainer):
                 seq_len = x.shape[1]
                 single_eval_pos = torch.randint(seq_len, []).numpy()
                 y = y.transpose(0, 1).to(device)
-                logits = model((x.transpose(0, 1).to(device), y), single_eval_pos=single_eval_pos)[
-                    "standard"
-                ]
+                logits = model(
+                    (x.transpose(0, 1).to(device), y), single_eval_pos=single_eval_pos
+                )["standard"]
                 targets = y[single_eval_pos:]
                 losses = self.criterion(logits, targets)
                 losses = losses.view(-1, logits.shape[1])
@@ -407,7 +411,9 @@ class Pipeline:
             if state is not None:
                 model.load_state_dict(state["model"])
                 optimizer.load_state_dict(state["optimizer"])
-            result = self.trainer.train(model, optimizer, loaders, end_epoch-start_epoch)
+            result = self.trainer.train(
+                model, optimizer, loaders, end_epoch - start_epoch
+            )
             results.append(result)
             new_states.append(
                 {
