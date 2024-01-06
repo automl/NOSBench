@@ -102,7 +102,8 @@ class NOSLib:
 
                 results, states = self.pipeline.evaluate(
                     run.program,
-                    epoch - run.epochs + 1,
+                    run.epochs,
+                    epoch + 1,
                     states,
                 )
                 fillvalue = results[0].empty_like()

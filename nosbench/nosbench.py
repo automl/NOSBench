@@ -17,7 +17,7 @@ from nosbench.pipeline import (
 )
 from nosbench.utils import deterministic
 from nosbench.pipeline import ToyMLPModelFactory, MLPModelFactory, PFNModelFactory
-from nosbench.pipeline import TrainValidationSplit, CrossValidation
+from nosbench.pipeline import TrainValidationSplit, CrossValidation, PFNEvaluation
 from nosbench.function import interpolate, bias_correct, clip, size
 from nosbench.function import Function
 from nosbench.program import Program, Instruction, READONLY_REGION
@@ -247,8 +247,7 @@ class NOSBench(BaseBenchmark):
         seq_len = 20
         steps_per_epoch = 100
         batch_size = 8
-        training_percentage = 0.8
-        dataset_size = int(steps_per_epoch * batch_size / training_percentage)
+        dataset_size = int(steps_per_epoch * batch_size)
 
         _, y = sample_from_prior(100000, seq_len, num_features)
         limits = get_bucket_limits(num_outputs=100, ys=y.transpose(0, 1).to(device))
@@ -263,10 +262,10 @@ class NOSBench(BaseBenchmark):
             num_features=num_features,
         )
         dataset = RidgeRegressionDataset(
-            dataset_size=dataset_size, batch_size=batch_size, seq_len=seq_len, num_features=num_features
+            dataset_size=dataset_size, seq_len=seq_len, num_features=num_features
         )
         trainer = PFNTrainer(criterion)
-        evaluation_metric = TrainValidationSplit(training_percentage=training_percentage, batch_size=1)
+        evaluation_metric = PFNEvaluation(batch_size=batch_size)
         pipeline = Pipeline(dataset, trainer, model_factory, evaluation_metric)
         path = os.path.join(path, self.get_identifier())
         super().__init__(pipeline=pipeline, path=path, device=device)

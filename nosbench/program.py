@@ -49,6 +49,10 @@ class Program(list):
         optimizer_class = self.optimizer()
         optimizer = optimizer_class([x])
 
+        # To eliminate 1/g optimizers
+        optimizer.zero_grad()
+        optimizer.step()
+
         exp_avg = 0.0
         try:
             for _ in range(10):

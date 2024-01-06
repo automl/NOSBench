@@ -44,20 +44,33 @@ class ScikitLearnDataset(Dataset):
 
 
 class RidgeRegressionDataset(Dataset):
-    @deterministic(seed=42)
-    def __init__(self, dataset_size, batch_size=1, seq_len=100, num_features=1):
+    def __init__(self, dataset_size, seq_len, num_features):
         self.dataset_size = dataset_size
-        self.batch_size = batch_size
-        self.dataset = []
-        for i in range(dataset_size//batch_size):
-            data = sample_from_prior(batch_size=batch_size, seq_len=seq_len, num_features=num_features)
-            self.dataset.append(data)
+        self.seq_len = seq_len
+        self.num_features = num_features
 
-    def __getitem__(self, i):
-        return self.dataset[i]
+    def loader(self, start_epoch, batch_size):
+        dataset_size = self.dataset_size
+        seq_len = self.seq_len
+        num_features = self.num_features
+        class RidgeRegressionDataLoader(DataLoader):
+            def __init__(self):
+                self.epoch = 0
 
-    def __len__(self):
-        return self.dataset_size // self.batch_size
+            def __iter__(self):
+                size = dataset_size // batch_size
+                for i in range(size):
+                    f = deterministic(size * (start_epoch + self.epoch) + i)(sample_from_prior)
+                    yield f(batch_size, seq_len, num_features)
+
+            def step(self):
+                self.epoch += 1
+
+            @staticmethod
+            def __len__():
+                return self.dataset_size // self.batch_size
+
+        return RidgeRegressionDataLoader()
 
 
 class Result(ABC):
@@ -91,18 +104,16 @@ class ClassificationResult(Result):
 @dataclass(frozen=True)
 class PFNResult(Result):
     training_losses: list = field(default_factory=list)
-    validation_losses: list = field(default_factory=list)
 
     def concat(self, other):
         return PFNResult(
             self.training_losses + other.training_losses,
-            self.validation_losses + other.validation_losses,
         )
 
 
 class Trainer(ABC):
     @abstractmethod
-    def train(self, model, optimizer, train_loader, val_loader, epochs):
+    def train(self, model, optimizer, loaders, epochs):
         """Train and validate given model on train/val for epochs"""
 
 
@@ -111,13 +122,14 @@ class ClassificationTrainer(Trainer):
     target_weights: Optional[float] = None
 
     @deterministic(seed=42)
-    def train(self, model, optimizer, train_loader, val_loader, epochs):
+    def train(self, model, optimizer, loaders, epochs):
         device = Device.get()
         training_losses = []
         validation_losses = []
         accuracies = []
         training_costs = []
         training_cost = 0.0
+        train_loader, val_loader = loaders
         for epoch in range(epochs):
             minibatch_losses = []
             prev_time = time.monotonic()
@@ -164,16 +176,14 @@ class PFNTrainer(Trainer):
     criterion: callable
 
     @deterministic(seed=42)
-    def train(self, model, optimizer, train_loader, val_loader, epochs):
+    def train(self, model, optimizer, loader, epochs):
         device = Device.get()
         training_losses = []
-        validation_losses = []
-        confidances = []
         for epoch in range(epochs):
             minibatch_losses = []
             prev_time = time.monotonic()
             total_loss = 0.0
-            for x, y in train_loader:
+            for x, y in loader:
                 x, y = x.squeeze(0), y.squeeze(0)
                 seq_len = x.shape[1]
                 single_eval_pos = torch.randint(seq_len, []).numpy()
@@ -191,35 +201,17 @@ class PFNTrainer(Trainer):
                 optimizer.step()
                 optimizer.zero_grad()
                 minibatch_losses.append(loss.item())
+            loader.step()
             training_losses.append(minibatch_losses)
-
-            validation_loss = 0.0
-            size = 0
-            num_training_points = 4
-            with torch.no_grad():
-                for x, y in val_loader:
-                    x = x.flatten(0, 1).transpose(0, 1).to(device)
-                    y = y.flatten(0, 1).transpose(0, 1).to(device)
-                    logits = model((x, y), single_eval_pos=num_training_points)[
-                        "standard"
-                    ]
-                    targets = y[num_training_points:]
-                    losses = self.criterion(logits, targets)
-                    losses = losses.view(-1, logits.shape[1])
-                    loss = losses.sum()
-                    validation_loss += loss.cpu().item()
-                    size += x.shape[1]
-                validation_losses.append(validation_loss / size)
 
         return PFNResult(
             training_losses=training_losses,
-            validation_losses=validation_losses,
         )
 
 
 class EvaluationMetric(ABC):
     @abstractmethod
-    def evaluations(self, dataset):
+    def evaluations(self, dataset, start_epoch):
         """Yield training and validation data loader generator"""
 
     @abstractmethod
@@ -228,12 +220,24 @@ class EvaluationMetric(ABC):
 
 
 @dataclass
+class PFNEvaluation(EvaluationMetric):
+    batch_size: float = -1
+
+    @deterministic(seed=42)
+    def evaluations(self, dataset, start_epoch):
+        yield dataset.loader(start_epoch, self.batch_size)
+
+    def evaluate(self, results, epoch):
+        return np.mean(results[0].training_losses[epoch])
+
+
+@dataclass
 class TrainValidationSplit(EvaluationMetric):
     training_percentage: float = 0.8
     batch_size: float = -1
 
     @deterministic(seed=42)
-    def evaluations(self, dataset):
+    def evaluations(self, dataset, start_epoch):
         split = [self.training_percentage, 1 - self.training_percentage]
         split = [int(np.ceil(s * len(dataset))) for s in split]
         train, val = random_split(dataset, split)
@@ -255,7 +259,7 @@ class CrossValidation(EvaluationMetric):
     batch_size: float = -1
 
     @deterministic(seed=42)
-    def evaluations(self, dataset):
+    def evaluations(self, dataset, start_epoch):
         splits = sklearn.model_selection.KFold(
             n_splits=self.n_splits, shuffle=True, random_state=np.random.RandomState(42)
         ).split(dataset)
@@ -390,12 +394,12 @@ class Pipeline:
     evaluation_metric: EvaluationMetric
 
     @deterministic(seed=42)
-    def evaluate(self, program, epochs, states=[]):
+    def evaluate(self, program, start_epoch, end_epoch, states=[]):
         device = Device.get()
         results = []
         new_states = []
-        for (train, val), state in zip_longest(
-            self.evaluation_metric.evaluations(self.dataset), states
+        for (loaders), state in zip_longest(
+            self.evaluation_metric.evaluations(self.dataset, start_epoch), states
         ):
             model = self.model_factory.create_model().to(device)
             optimizer_class = program.optimizer()
@@ -403,7 +407,7 @@ class Pipeline:
             if state is not None:
                 model.load_state_dict(state["model"])
                 optimizer.load_state_dict(state["optimizer"])
-            result = self.trainer.train(model, optimizer, train, val, epochs)
+            result = self.trainer.train(model, optimizer, loaders, end_epoch-start_epoch)
             results.append(result)
             new_states.append(
                 {
