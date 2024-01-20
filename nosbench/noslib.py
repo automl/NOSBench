@@ -12,6 +12,9 @@ from nosbench.pipeline import Result
 from nosbench.program import Program
 from nosbench.device import Device
 
+import warnings
+warnings.filterwarnings("ignore")
+
 
 @dataclass
 class Run:

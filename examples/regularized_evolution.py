@@ -8,6 +8,10 @@ from pathlib import Path
 import json
 import time
 import pickle
+from ConfigSpace import ConfigurationSpace
+
+import matplotlib.pyplot as plt
+import numpy as np
 
 from nosbench.program import (
     Instruction,
@@ -16,8 +20,6 @@ from nosbench.program import (
 )
 import nosbench
 
-
-import numpy as np
 
 
 _Element = namedtuple("_Element", "cls fitness")
@@ -96,6 +98,9 @@ class RE_NOS(RegularizedEvolution):
         return -self.benchmark.query(element, self.benchmark_epochs)
 
     def random_element(self, rng, **kwargs):
+        if isinstance(self.initial_program, ConfigurationSpace):
+            config = self.initial_program.sample_configuration()
+            return benchmark.configuration_to_program(config)
         return copy.deepcopy(self.initial_program)
 
     def mutate_element(self, element, rng, **kwargs):
@@ -144,17 +149,18 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=123)
     parser.add_argument("--population_size", type=int, default=100)
     parser.add_argument("--tournament_size", type=int, default=25)
+    parser.add_argument("--device", type=str, default="cpu")
     parser.add_argument("--evaluations", type=int, default=100000)
     parser.add_argument("--save_every", type=int, default=100)
     parser.add_argument("--initial_program", type=str, default="AdamW")
     args = parser.parse_args()
 
-    benchmark = nosbench.create(args.benchmark_name, path=args.cache_path)
+    benchmark = nosbench.create(args.benchmark_name, path=args.cache_path, device=args.device)
 
     if args.initial_program == "random":
-        cs = benchmark.configspace(seed=args.seed)
-        config = cs.sample_configuration()
-        initial_program = benchmark.configuration_to_program(config)
+        initial_program = benchmark.configspace(seed=args.seed)
+        # config = cs.sample_configuration()
+        # initial_program = benchmark.configuration_to_program(config)
     else:
         initial_program = getattr(nosbench.optimizers, args.initial_program)
 
@@ -175,14 +181,26 @@ if __name__ == "__main__":
     with open(path / f"{timestr}-{hash(dump)}.json", "w") as f:
         f.write(dump)
 
+    hits = []
+    nans = []
+    infs = []
     for i in range(args.population_size, args.evaluations):
         x = max(re.history, key=lambda x: x.fitness)
         print(f"Evaluation: {i+1}, Fitness: {x.fitness}")
         re.step()
+        hits.append(benchmark.stats.hits)
+        nans.append(benchmark.stats.nans)
+        infs.append(benchmark.stats.infs)
 
         if ((i % args.save_every) == 0 and i > 0) or (i >= args.evaluations - 1):
             with open(path / f"{timestr}-{hash(dump)}.pickle", "wb") as f:
                 pickle.dump(re.history, f)
+
+    plt.plot(hits, label="Hits", color="green")
+    plt.plot(nans, label="NaNs", color="red")
+    plt.plot(infs, label="Infs", color="orange")
+    plt.legend()
+    plt.savefig('hit_miss_by_time_re.png', bbox_inches='tight')
 
     print(f"Number of Queries: {benchmark.stats.n_queries}, Hits: {benchmark.stats.hits}")
     x = max(re.history, key=lambda x: x.fitness)
