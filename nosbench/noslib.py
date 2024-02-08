@@ -77,7 +77,7 @@ class NOSLib:
             self._exists.add(int(run.stem))
         self.pipeline = pipeline
 
-    def query(self, program, epoch, return_run=False, skip_cache=False, **kwargs):
+    def query(self, program, epoch, return_run=False, skip_cache=False, save_model=True, **kwargs):
         assert (
             not (kwargs.get("lr", 1.0) != 1.0) or skip_cache
         ), "If learning rate is not 1.0, skip_cache must be set to True"
@@ -112,8 +112,15 @@ class NOSLib:
             if epoch >= run.epochs:
                 state_path = (self.path / str(stem)).with_suffix(".states")
                 states = []
-                if run.epochs > 0:
+                if run.epochs > 0 and state_path.exists():
                     states = torch.load(state_path)
+                else:
+                    # Cached model is not available so train from scratch
+                    run = Run(
+                        program=program,
+                        epochs=0,
+                        results=[],
+                    )
 
                 results, states = self.pipeline.evaluate(
                     run.program,
@@ -133,7 +140,8 @@ class NOSLib:
                 if not skip_cache:
                     with path.open("wb") as f:
                         pickle.dump(run, f)
-                    torch.save(states, state_path)
+                    if save_model:
+                        torch.save(states, state_path)
                     self._exists.add(stem)
         loss = self.pipeline.evaluation_metric.evaluate(run.results, epoch)
         if return_run:
