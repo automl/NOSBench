@@ -398,7 +398,7 @@ class Pipeline:
     evaluation_metric: EvaluationMetric
 
     @deterministic(seed=42)
-    def evaluate(self, program, start_epoch, end_epoch, states=[]):
+    def evaluate(self, program, start_epoch, end_epoch, states=[], **kwargs):
         device = Device.get()
         results = []
         new_states = []
@@ -407,7 +407,8 @@ class Pipeline:
         ):
             model = self.model_factory.create_model().to(device)
             optimizer_class = program.optimizer()
-            optimizer = optimizer_class(model.parameters())
+            lr = kwargs.get("lr", 1.0)
+            optimizer = optimizer_class(model.parameters(), lr=lr)
             if state is not None:
                 model.load_state_dict(state["model"])
                 optimizer.load_state_dict(state["optimizer"])

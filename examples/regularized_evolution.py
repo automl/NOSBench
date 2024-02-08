@@ -95,7 +95,10 @@ class RE_NOS(RegularizedEvolution):
         super().__init__(population_size, tournament_size, rng, **kwargs)
 
     def evaluate_element(self, element, **kwargs):
-        return -self.benchmark.query(element, self.benchmark_epochs)
+        prev = time.time()
+        ret = -self.benchmark.query(element, self.benchmark_epochs)
+        print(time.time() - prev)
+        return ret
 
     def random_element(self, rng, **kwargs):
         if isinstance(self.initial_program, ConfigurationSpace):
