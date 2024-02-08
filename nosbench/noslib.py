@@ -13,6 +13,7 @@ from nosbench.program import Program
 from nosbench.device import Device
 
 import warnings
+
 warnings.filterwarnings("ignore")
 
 
@@ -76,7 +77,10 @@ class NOSLib:
             self._exists.add(int(run.stem))
         self.pipeline = pipeline
 
-    def query(self, program, epoch, return_run=False, skip_cache=False):
+    def query(self, program, epoch, return_run=False, skip_cache=False, **kwargs):
+        assert (
+            not (kwargs.get("lr", 1.0) != 1.0) or skip_cache
+        ), "If learning rate is not 1.0, skip_cache must be set to True"
         self.stats.n_queries += 1
         Device.set(self.device)
         stem = hash(program)
@@ -116,6 +120,7 @@ class NOSLib:
                     run.epochs,
                     epoch + 1,
                     states,
+                    **kwargs,
                 )
                 fillvalue = results[0].empty_like()
                 concat_results = []

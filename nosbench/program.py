@@ -131,10 +131,11 @@ class _TensorMemory(list):
 
 def create_optimizer(program):
     class Optimizer(torch.optim.Optimizer):
-        def __init__(self, params):
+        def __init__(self, params, lr=1.0):
             # Hyperparameters of the optimizer are part of the program
             self.memory = {}
-            super(Optimizer, self).__init__(params, {})
+            defaults = dict(lr=lr)
+            super(Optimizer, self).__init__(params, defaults)
 
         def load_state_dict(self, state_dict):
             super().load_state_dict(state_dict)
@@ -184,7 +185,7 @@ def create_optimizer(program):
                             d_p = instruction.execute(self.memory[p])
 
                         # Update weights
-                        p.add_(-d_p)
+                        p.add_(d_p, alpha=-group["lr"])
             return loss
 
     return Optimizer
