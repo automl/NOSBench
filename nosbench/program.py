@@ -43,7 +43,8 @@ class Program(list):
         a = torch.normal(torch.zeros(dim, dim), torch.ones(dim, dim) * 1e-1)
         b = torch.normal(torch.zeros(dim), torch.ones(dim) * 1e-1)
         x = torch.normal(torch.zeros(dim), torch.ones(dim) * 1e-1)
-        y = -torch.ones(dim) / 2.0
+        # y = -torch.ones(dim) / 2.0
+        y = -torch.tensor(0.5)
         x.requires_grad_()
 
         optimizer_class = self.optimizer()
@@ -57,6 +58,7 @@ class Program(list):
         try:
             for _ in range(10):
                 z = x @ a + b
+                z = (z**2).sum().sqrt()
                 yhat = z**2 / (z**2 + 1.0)
                 loss = torch.nn.functional.l1_loss(yhat, y)
                 optimizer.zero_grad()
