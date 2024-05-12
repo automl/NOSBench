@@ -16,3 +16,19 @@ def deterministic(seed):
         return func
 
     return _wrapper
+
+
+def prune_program(prog):
+    while True:
+        remove = set()
+        for i, instruction in reversed(list(enumerate(prog))):
+            for next in chain(prog[i + 1 :], prog):
+                if instruction.output in next.inputs:
+                    break
+                if instruction.output == next.output:
+                    if i != len(prog) - 1:
+                        remove.add(i)
+        for index in reversed(list(remove)):
+            prog.pop(index)
+        if len(remove) == 0:
+            return
