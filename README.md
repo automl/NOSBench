@@ -1,11 +1,10 @@
 Neural Optimizer Search Benchmark
 =================================
 
-## Requirements
-```
-torch
-sklearn
-numpy
+## Install
+
+```bash
+poetry install
 ```
 
 ## Usage
@@ -42,7 +41,7 @@ SGD = Program(
     ]
 )
 
-benchmark = nosbench.create("mlp-1")
+benchmark = nosbench.create("pfn")
 print(benchmark.query(SGD, 10))
 ```
 
