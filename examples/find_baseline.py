@@ -19,7 +19,6 @@ _Element = namedtuple("_Element", "cls fitness")
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--output_path", type=str, default="results")
-parser.add_argument("--benchmark_name", type=str, default="toy")
 parser.add_argument("--benchmark_epochs", type=int, default=50)
 parser.add_argument("--save_every", type=int, default=10)
 parser.add_argument("--seed", type=int, default=123)
@@ -27,7 +26,7 @@ parser.add_argument("--evaluations", type=int, default=10000)
 parser.add_argument("--device", type=str, default="cpu")
 args = parser.parse_args()
 
-benchmark = nosbench.create(args.benchmark_name, device=args.device)
+benchmark = nosbench.NOSBench(device=args.device)
 
 timestr = time.strftime("%Y-%m-%d")
 settings = {"search_algorithm": "SMAC_Baseline", "args": vars(args)}
@@ -36,6 +35,8 @@ path = Path(args.output_path)
 path.mkdir(parents=True, exist_ok=True)
 with open(path / f"{timestr}-{hash(dump)}.json", "w") as f:
     f.write(dump)
+smac_cache = path / "smac_cache"
+smac_cache.mkdir(parents=True, exist_ok=True)
 
 class Program:
     def __init__(self, optimizer, *args, **kwargs):
@@ -77,9 +78,8 @@ class CustomCallback(Callback):
             history = []
             for k, v in smac.runhistory.items():
                 config = smac.runhistory.get_config(k.config_id)
-                program = benchmark.configuration_to_program(config)
                 fitness = -v.cost
-                history.append(_Element(program, fitness))
+                history.append(_Element(config, fitness))
 
             with open(path / f"{timestr}-{hash(dump)}.pickle", "wb") as f:
                 pickle.dump(history, f)
@@ -92,32 +92,25 @@ optimizer = Categorical('optimizer', ['SGD', 'Adam', 'AdamW', 'Adadelta', 'Adagr
 
 # Common parameters
 weight_decay= Float('weight_decay', bounds=(1e-15, 1.0), default=1e-8, log=True)
-lr_small = Float('lr_small', bounds=(1e-8, 1.0), default=0.001, log=True)
-lr_big = Float('lr_big', bounds=(1e-8, 1.0), default=0.01, log=True)
+lr = Float('lr', bounds=(1e-8, 5.0), default=0.001, log=True)
 
 # Momentum
 momentum = Float('momentum', bounds=(1e-15, 1.0), default=1e-8, log=True)
 
 # Adam AdamW
-beta1 = Float('beta1', bounds=(1e-5, 0.99999), default=0.9, log=True)
-beta2 = Float('beta2', bounds=(1e-5, 0.99999), default=0.999, log=True)
+inv_beta1 = Float('inv_beta1', bounds=(1e-5, 0.99999), default=0.1, log=True)
+inv_beta2 = Float('inv_beta2', bounds=(1e-5, 0.99999), default=0.001, log=True)
 
 # Adadelta
-lr_adadelta = Float('lr_adadelta', bounds=(1e-8, 3.0), default=1.0, log=True)
-rho = Float('rho', bounds=(1e-5, 0.99999), default=0.9, log=True)
+rho = Float('inv_rho', bounds=(1e-5, 0.99999), default=0.1, log=True)
 
 # Adagrad
 lr_decay = Float('lr_decay', bounds=(1e-15, 1.0), default=1e-8, log=True)
 
 # RMSprop
-alpha = Float('alpha', bounds=(1e-5, 0.99999), default=0.99, log=True)
+alpha = Float('inv_alpha', bounds=(1e-5, 0.99999), default=0.01, log=True)
 
-cs.add_hyperparameters([optimizer, weight_decay, lr_small, lr_big, momentum, beta1, beta2, lr_adadelta, rho, lr_decay, alpha])
-
-# LR Conditions
-lr_adadelta_cond = EqualsCondition(lr_adadelta, optimizer, 'Adadelta')
-lr_small_cond = InCondition(lr_small, optimizer, ["SGD", "Adam", "AdamW"])
-lr_big_cond = InCondition(lr_big, optimizer, ["Adagrad", "RMSprop"])
+cs.add_hyperparameters([optimizer, weight_decay, lr, momentum, inv_beta1, inv_beta2, rho, lr_decay, alpha])
 
 # Momentum Condition
 momentum_cond = InCondition(momentum, optimizer, ["SGD", "RMSprop"])
@@ -129,33 +122,47 @@ lr_decay_cond = EqualsCondition(lr_decay, optimizer, 'Adagrad')
 rho_cond = EqualsCondition(rho, optimizer, 'Adadelta')
 
 # AdamW Adam Conditions
-beta1_cond = InCondition(beta1, optimizer, ["Adam", "AdamW"])
-beta2_cond = InCondition(beta2, optimizer, ["Adam", "AdamW"])
+beta1_cond = InCondition(inv_beta1, optimizer, ["Adam", "AdamW"])
+beta2_cond = InCondition(inv_beta2, optimizer, ["Adam", "AdamW"])
 
 alpha_cond = EqualsCondition(alpha, optimizer, "RMSprop")
 
-cs.add_conditions([lr_adadelta_cond, lr_small_cond, lr_big_cond, momentum_cond, lr_decay_cond, rho_cond, beta1_cond, beta2_cond, alpha_cond])
+cs.add_conditions([momentum_cond, lr_decay_cond, rho_cond, beta1_cond, beta2_cond, alpha_cond])
 
 def train(config: Configuration, seed: int = 0):
     config = dict(config)
-    replace_lr(config, "lr_big")
-    replace_lr(config, "lr_small")
-    replace_lr(config, "lr_adadelta")
     try:
-        beta1 = config.pop("beta1")
-        beta2 = config.pop("beta2")
-        config["betas"] = (beta1, beta2)
+        beta1 = config.pop("inv_beta1")
+        beta2 = config.pop("inv_beta2")
+        config["betas"] = (1-beta1, 1-beta2)
     except KeyError:
         pass
+
+    try:
+        rho = config.pop("inv_rho")
+        config["rho"] = (1-rho)
+    except KeyError:
+        pass
+
+    try:
+        alpha = config.pop("inv_alpha")
+        config["alpha"] = (1-alpha)
+    except KeyError:
+        pass
+
     optimizer = config.pop("optimizer")
     optimizer = getattr(torch.optim, optimizer)
     print(optimizer, config)
 
     program = Program(optimizer, **config)
-    return benchmark.query(program, 19, skip_cache=True)
 
-scenario = Scenario(cs, deterministic=True, n_trials=args.evaluations)
-smac = HyperparameterOptimizationFacade(scenario, train)
+    loss = benchmark.query(program, 19, skip_cache=True)
+    if np.isnan(loss) or np.isinf(loss):
+        return 2147483648
+    return loss
+
+scenario = Scenario(cs, deterministic=True, seed=0, n_trials=args.evaluations, output_directory=path / "output.smac")
+smac = HyperparameterOptimizationFacade(scenario, train, callbacks=[CustomCallback()])
 incumbent = smac.optimize()
 
 history = []
