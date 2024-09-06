@@ -68,3 +68,18 @@ for _ in range(5):
     pprint.pprint(program)
     print(loss)
 ```
+
+## Citation
+
+If you use `NOSBench-101` in your research, please cite our paper:
+
+```bibtex
+@inproceedings{
+    karakasli2024nosbench,
+    title={{NOSB}ench-101: Towards Reproducible Neural Optimizer Search},
+    author={Goktug Karakasli and Steven Adriaensen and Frank Hutter},
+    booktitle={AutoML Conference 2024 (Workshop Track)},
+    year={2024},
+    url={https://openreview.net/forum?id=5Lm2ghxMlp}
+}
+```
