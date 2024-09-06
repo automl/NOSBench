@@ -1,5 +1,5 @@
-Neural Optimizer Search Benchmark
-=================================
+NOSBench-101: Towards Reproducible Neural Optimizer Search
+===========================================================
 
 ## Install
 
