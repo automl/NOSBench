@@ -44,7 +44,6 @@ if __name__ == "__main__":
     with open(path / f"{timestr}-{hash(dump)}.json", "w") as f:
         f.write(dump)
 
-
     def train(config: Configuration, seed: int = 0):
         program = Program(optimizer, **config)
         return benchmark.query(program, 19, skip_cache=True)
@@ -55,9 +54,15 @@ if __name__ == "__main__":
     configspace = ConfigurationSpace(
         seed=123,
         space={
-          "lr": Float('lr', bounds=(1e-5, 1e-1), default=1e-3, log=True, distribution=Normal(logmean, logstd)),
-        }
-    )    
+            "lr": Float(
+                "lr",
+                bounds=(1e-5, 1e-1),
+                default=1e-3,
+                log=True,
+                distribution=Normal(logmean, logstd),
+            ),
+        },
+    )
     scenario = Scenario(configspace, deterministic=True, n_trials=200)
     smac = HyperparameterOptimizationFacade(scenario, train)
     incumbent = smac.optimize()

@@ -77,7 +77,15 @@ class NOSLib:
             self._exists.add(int(run.stem))
         self.pipeline = pipeline
 
-    def query(self, program, epoch, return_run=False, skip_cache=False, save_model=True, **kwargs):
+    def query(
+        self,
+        program,
+        epoch,
+        return_run=False,
+        skip_cache=False,
+        save_model=True,
+        **kwargs,
+    ):
         assert (
             not (kwargs.get("lr", 1.0) != 1.0) or skip_cache
         ), "If learning rate is not 1.0, skip_cache must be set to True"

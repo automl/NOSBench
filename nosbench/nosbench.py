@@ -112,6 +112,7 @@ class BaseBenchmark(NOSLib):
             program.append(instruction)
         return program
 
+
 class ToyBenchmark(BaseBenchmark):
     def __init__(self, path="cache", device="cpu"):
         iris = sklearn.datasets.load_iris()
@@ -123,6 +124,7 @@ class ToyBenchmark(BaseBenchmark):
         pipeline = Pipeline(dataset, trainer, model_factory, evaluation_metric)
         path = os.path.join(path, "toy")
         super().__init__(pipeline=pipeline, path=path, device=device)
+
 
 class NOSMLPBench(BaseBenchmark):
     def __init__(
@@ -152,7 +154,7 @@ class NOSMLPBench(BaseBenchmark):
         evaluation_metric = CrossValidation(n_splits=n_splits, batch_size=batch_size)
         pipeline = Pipeline(dataset, trainer, model_factory, evaluation_metric)
         args_string = f"{data_id}_{n_splits}_{batch_size}_{backbone}_{head}"
-        args_hash = hashlib.md5(args_string.encode('utf-8')).hexdigest()
+        args_hash = hashlib.md5(args_string.encode("utf-8")).hexdigest()
         path = os.path.join(path, args_hash)
         super().__init__(pipeline=pipeline, path=path, device=device)
 
@@ -165,6 +167,7 @@ class NOSMLPBench(BaseBenchmark):
             f"backbone: {self.backbone}\n"
             f"head: {self.head}\n"
         )
+
 
 class NOSBench(BaseBenchmark):
     @deterministic(seed=42)

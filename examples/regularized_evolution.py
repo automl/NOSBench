@@ -21,7 +21,6 @@ from nosbench.program import (
 import nosbench
 
 
-
 _Element = namedtuple("_Element", "cls fitness")
 
 
@@ -161,8 +160,6 @@ if __name__ == "__main__":
 
     if args.initial_program == "random":
         initial_program = benchmark.configspace(seed=args.seed)
-        # config = cs.sample_configuration()
-        # initial_program = benchmark.configuration_to_program(config)
     else:
         initial_program = getattr(nosbench.optimizers, args.initial_program)
 
@@ -183,28 +180,15 @@ if __name__ == "__main__":
     with open(path / f"{timestr}-{hash(dump)}.json", "w") as f:
         f.write(dump)
 
-    hits = []
-    nans = []
-    infs = []
     for i in range(args.population_size, args.evaluations):
         x = max(re.history, key=lambda x: x.fitness)
         print(f"Evaluation: {i+1}, Fitness: {x.fitness}")
         re.step()
-        hits.append(benchmark.stats.hits)
-        nans.append(benchmark.stats.nans)
-        infs.append(benchmark.stats.infs)
 
         if ((i % args.save_every) == 0 and i > 0) or (i >= args.evaluations - 1):
             with open(path / f"{timestr}-{hash(dump)}.pickle", "wb") as f:
                 pickle.dump(re.history, f)
 
-    plt.plot(hits, label="Hits", color="green")
-    plt.plot(nans, label="NaNs", color="red")
-    plt.plot(infs, label="Infs", color="orange")
-    plt.legend()
-    plt.savefig('hit_miss_by_time_re.png', bbox_inches='tight')
-
-    print(f"Number of Queries: {benchmark.stats.n_queries}, Hits: {benchmark.stats.hits}")
     x = max(re.history, key=lambda x: x.fitness)
     print("Incumbent optimizer:")
     pprint.pprint(x.cls)
