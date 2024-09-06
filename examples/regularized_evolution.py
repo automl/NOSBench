@@ -147,7 +147,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--output_path", type=str, default="results")
     parser.add_argument("--cache_path", type=str, default="cache")
-    parser.add_argument("--benchmark_name", type=str, default="toy")
     parser.add_argument("--benchmark_epochs", type=int, default=50)
     parser.add_argument("--seed", type=int, default=123)
     parser.add_argument("--population_size", type=int, default=100)
@@ -158,7 +157,7 @@ if __name__ == "__main__":
     parser.add_argument("--initial_program", type=str, default="AdamW")
     args = parser.parse_args()
 
-    benchmark = nosbench.create(args.benchmark_name, path=args.cache_path, device=args.device)
+    benchmark = nosbench.NOSBench(path=args.cache_path, device=args.device)
 
     if args.initial_program == "random":
         initial_program = benchmark.configspace(seed=args.seed)

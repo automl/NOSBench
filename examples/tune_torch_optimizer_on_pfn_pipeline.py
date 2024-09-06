@@ -31,7 +31,7 @@ class Program:
 
 
 if __name__ == "__main__":
-    benchmark = nosbench.create("pfn", device="cuda")
+    benchmark = nosbench.NOSBench(device="cuda")
 
     output_path = "results"
     optimizer = torch.optim.Adam

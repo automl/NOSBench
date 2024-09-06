@@ -1,6 +1,7 @@
 import os
 from collections import defaultdict
 from itertools import cycle
+import hashlib
 
 import torch
 import sklearn.datasets
@@ -111,15 +112,6 @@ class BaseBenchmark(NOSLib):
             program.append(instruction)
         return program
 
-    # TODO: Implement this properly
-    def get_identifier(self):
-        raise NotImplementedError
-
-    @classmethod
-    def from_identifier(cls, identifier, path, device):
-        raise NotImplementedError
-
-
 class ToyBenchmark(BaseBenchmark):
     def __init__(self, path="cache", device="cpu"):
         iris = sklearn.datasets.load_iris()
@@ -131,14 +123,6 @@ class ToyBenchmark(BaseBenchmark):
         pipeline = Pipeline(dataset, trainer, model_factory, evaluation_metric)
         path = os.path.join(path, "toy")
         super().__init__(pipeline=pipeline, path=path, device=device)
-
-    def get_identifier(self):
-        return "toy"
-
-    @classmethod
-    def from_identifier(cls, identifier, path="cache", device="cpu"):
-        return cls(path=path, device=device)
-
 
 class NOSMLPBench(BaseBenchmark):
     def __init__(
@@ -167,67 +151,10 @@ class NOSMLPBench(BaseBenchmark):
         )
         evaluation_metric = CrossValidation(n_splits=n_splits, batch_size=batch_size)
         pipeline = Pipeline(dataset, trainer, model_factory, evaluation_metric)
-        path = os.path.join(path, self.get_identifier())
+        args_string = f"{data_id}_{n_splits}_{batch_size}_{backbone}_{head}"
+        args_hash = hashlib.md5(args_string.encode('utf-8')).hexdigest()
+        path = os.path.join(path, args_hash)
         super().__init__(pipeline=pipeline, path=path, device=device)
-
-    def get_identifier(self):
-        chars = cycle("nosbench")
-
-        def int_to_id(i):
-            assert isinstance(i, int)
-            return f"{len(str(i))}{next(chars)}{i}"
-
-        def int_array_to_id(array):
-            id_string = "".join([int_to_id(i) for i in array])
-            return f"{len(array)}{next(chars)}{id_string}"
-
-        identifier = (
-            int_to_id(self.data_id)
-            + int_to_id(self.n_splits)
-            + int_to_id(self.batch_size)
-            + int_array_to_id(self.backbone)
-            + int_array_to_id(self.head)
-        )
-        return identifier
-
-    @classmethod
-    def from_identifier(cls, identifier, path="cache", device="cpu"):
-        def takewhile(predicate, string):
-            i = 0
-            while predicate(string[i]):
-                i += 1
-            return i
-
-        def read_int(string):
-            i = takewhile(str.isnumeric, string)
-            length = int(string[:i])
-            return int(string[i + 1 : i + 1 + length]), string[i + 1 + length :]
-
-        def read_array(string):
-            i = takewhile(str.isnumeric, string)
-            array_length = int(string[:i])
-            rest = string[i + 1 :]
-            array = []
-            for _ in range(array_length):
-                value, rest = read_int(rest)
-                array.append(value)
-            return array, rest
-
-        data_id, identifier = read_int(identifier)
-        n_splits, identifier = read_int(identifier)
-        batch_size, identifier = read_int(identifier)
-        backbone, identifier = read_array(identifier)
-        head, identifier = read_array(identifier)
-        assert len(identifier) == 0
-        return cls(
-            data_id=data_id,
-            n_splits=n_splits,
-            batch_size=batch_size,
-            backbone=backbone,
-            head=head,
-            path=path,
-            device=device,
-        )
 
     def __str__(self):
         return (
@@ -238,7 +165,6 @@ class NOSMLPBench(BaseBenchmark):
             f"backbone: {self.backbone}\n"
             f"head: {self.head}\n"
         )
-
 
 class NOSBench(BaseBenchmark):
     @deterministic(seed=42)
@@ -267,12 +193,5 @@ class NOSBench(BaseBenchmark):
         trainer = PFNTrainer(criterion)
         evaluation_metric = PFNEvaluation(batch_size=batch_size)
         pipeline = Pipeline(dataset, trainer, model_factory, evaluation_metric)
-        path = os.path.join(path, self.get_identifier())
+        path = os.path.join(path, "pfn")
         super().__init__(pipeline=pipeline, path=path, device=device)
-
-    def get_identifier(self):
-        return "pfn"
-
-    @classmethod
-    def from_identifier(cls, identifier, path="cache", device="cpu"):
-        return cls(path=path, device=device)
