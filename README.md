@@ -17,7 +17,8 @@ Check [examples](examples) folder for advanced usage.
 import nosbench
 from nosbench.optimizers import AdamW
 
-benchmark = nosbench.create("toy")
+benchmark = nosbench.NOSBench()
+# benchmark = nosbench.ToyBenchmark()
 print(benchmark.query(AdamW, 10))
 ```
 
@@ -41,7 +42,7 @@ SGD = Program(
     ]
 )
 
-benchmark = nosbench.create("pfn")
+benchmark = nosbench.NOSBench()
 print(benchmark.query(SGD, 10))
 ```
 
@@ -49,16 +50,11 @@ Check [nosbench/program.py](nosbench/program.py) for values in `READONLY_REGION`
 
 ### Configuration Space
 
-Requires ConfigSpace
-```bash
-pip install ConfigSpace
-```
-
 ```python
 import pprint
 import nosbench
 
-benchmark = nosbench.create("toy")
+benchmark = nosbench.NOSBench()
 cs = benchmark.configspace(seed=123)
 
 for _ in range(5):
@@ -68,6 +64,10 @@ for _ in range(5):
     pprint.pprint(program)
     print(loss)
 ```
+
+### Pruning Optimizers
+Resulting optimizers from a search usually contains a lot of redundant instructions. You can use [prune_program](https://github.com/automl/NOSBench/blob/5f7c859b39cce33d61a530b5008d4e04eeb28a1b/nosbench/utils.py#L21-L34) function to clean it.
+
 
 ## Citation
 
