@@ -1,4 +1,5 @@
 from functools import wraps
+from itertools import chain
 
 import torch
 
@@ -28,7 +29,7 @@ def prune_program(prog):
                 if instruction.output == next.output:
                     if i != len(prog) - 1:
                         remove.add(i)
-        for index in reversed(list(remove)):
+        for index in sorted(list(remove),reverse=True):
             prog.pop(index)
         if len(remove) == 0:
             return

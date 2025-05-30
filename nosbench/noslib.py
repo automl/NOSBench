@@ -121,7 +121,7 @@ class NOSLib:
                 state_path = (self.path / str(stem)).with_suffix(".states")
                 states = []
                 if run.epochs > 0 and state_path.exists():
-                    states = torch.load(state_path)
+                    states = torch.load(state_path, weights_only=False)
                 else:
                     # Cached model is not available so train from scratch
                     run = Run(
