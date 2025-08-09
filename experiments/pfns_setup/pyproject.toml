@@ -1,0 +1,26 @@
+[tool.poetry]
+name = "pfns"
+version = "0.1.0"
+description = ""
+authors = ["Goktug <20567087+goktug97@users.noreply.github.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = ">=3.9,<3.13"
+numpy="^1.21.2"
+requests="^2.23.0"
+gpytorch="^1.5.0" # training
+configspace="^0.7.1" # baselins + training + evaluation
+tqdm="^4.62.1" # training + evaluation
+torch = "^2.1.0"
+scikit-learn = "^1.4.1.post1"
+botorch = "^0.7.2"
+bayesmark = "^0.0.8"
+matplotlib = "^3.8.3"
+pyyaml = "^6.0.1"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
